@@ -63,8 +63,13 @@
     .bird-card .pill:last-child{margin-bottom:0}
 
     /* father/mother pedigree uploads + numbered cells */
-    .ref-stage{display:none;position:relative;max-width:100%;margin:14px 0 2px;border:1px solid var(--line-2);border-radius:8px;overflow:hidden;line-height:0}
+    .ref-stage{display:none;position:relative;container-type:inline-size;max-width:100%;margin:14px 0 2px;border:1px solid var(--line-2);border-radius:8px;overflow:hidden;line-height:0}
     .ref-img-el{display:block;width:100%;height:auto}
+    .ref-stage.text-mode .ref-img-el{opacity:.16}
+    .text-layer{position:absolute;inset:0;line-height:1}
+    .text-layer span{position:absolute;white-space:pre;color:#111;font-family:'Courier Prime','Courier New',monospace;line-height:1.05;background:rgba(255,255,255,.62);padding:0 1px;border-radius:2px;cursor:text;user-select:text;-webkit-user-select:text}
+    .ref-stage ::selection{background:rgba(201,162,75,.6);color:#000}
+    .ref-stage ::-moz-selection{background:rgba(201,162,75,.6);color:#000}
     .ref-box{position:absolute;border:1.5px solid var(--accent);background:rgba(201,162,75,.14);cursor:grab;border-radius:3px}
     .ref-box:hover{background:rgba(201,162,75,.32)}
     .ref-box:active{cursor:grabbing}
@@ -230,7 +235,7 @@
       <!-- Father's pedigree -->
       <section class="block">
         <div class="block-title">Father's pedigree</div>
-        <div class="block-sub">Upload the father's pedigree. Each detected box appears below with a Copy button — copy a box, then paste it into the matching cell (and edit if needed).</div>
+        <div class="block-sub">Upload the father's pedigree. The text becomes selectable on the picture — highlight any text and copy it (Ctrl+C, or long-press → Copy on mobile), then paste into a cell.</div>
         <label class="upload">Upload Father Pedigree (PNG / JPG)<input type="file" id="fatherUpload" accept="image/png,image/jpeg" /></label>
         <div class="ref-stage" id="fatherRefStage"></div>
         <div class="box-list" id="fatherBoxList"></div>
@@ -244,7 +249,7 @@
       <!-- Mother's pedigree -->
       <section class="block">
         <div class="block-title">Mother's pedigree</div>
-        <div class="block-sub">Upload the mother's pedigree. Each detected box appears below with a Copy button — copy a box, then paste it into the matching cell (and edit if needed).</div>
+        <div class="block-sub">Upload the mother's pedigree. The text becomes selectable on the picture — highlight any text and copy it (Ctrl+C, or long-press → Copy on mobile), then paste into a cell.</div>
         <label class="upload">Upload Mother Pedigree (PNG / JPG)<input type="file" id="motherUpload" accept="image/png,image/jpeg" /></label>
         <div class="ref-stage" id="motherRefStage"></div>
         <div class="box-list" id="motherBoxList"></div>
@@ -408,8 +413,8 @@
   const store = {};                   // key -> {ring,name,fancier,desc}
   BIRDS.forEach(b=>store[b.key]={ring:'',name:'',fancier:'',desc:''});
   const ocr = {
-    father:{ready:false,chunks:[],boxes:[],url:null,ocrW:0,ocrH:0},
-    mother:{ready:false,chunks:[],boxes:[],url:null,ocrW:0,ocrH:0}
+    father:{ready:false,chunks:[],boxes:[],lines:[],url:null,ocrW:0,ocrH:0},
+    mother:{ready:false,chunks:[],boxes:[],lines:[],url:null,ocrW:0,ocrH:0}
   };
 
   // ---------- DOM ----------
@@ -596,34 +601,22 @@
       navigator.clipboard.writeText(text).then(done,()=>fallbackCopy(text,done));
     else fallbackCopy(text,done);
   }
-  function renderRefBoxes(side){
+  // Lay the recognised text over the picture as selectable spans (PDF-style text layer).
+  function renderTextLayer(side){
     const stage=$(side+'RefStage'); if(!stage) return;
-    [].slice.call(stage.querySelectorAll('.ref-box')).forEach(e=>e.remove());
-    const list=$(side+'BoxList'); if(list) list.innerHTML='';
-    const o=ocr[side];
-    (o.boxes||[]).forEach((b,i)=>{
-      // gold region over the picture: click/tap to copy its text
-      const d=document.createElement('div');
-      d.className='ref-box';
-      d.style.left=b.left+'%'; d.style.top=b.top+'%'; d.style.width=b.width+'%'; d.style.height=b.height+'%';
-      d.title='Box '+(i+1)+(b.text?' — click to copy':'');
-      d.innerHTML='<span class="ref-box-badge">'+(i+1)+'</span>';
-      d.addEventListener('click',()=>copyText(b.text||''));
-      stage.appendChild(d);
-      // list item below: shows the recognised text + a Copy button
-      if(list){
-        const item=document.createElement('div');
-        item.className='box-item';
-        item.innerHTML='<div class="box-item-head"><span class="box-item-badge">Box '+(i+1)+'</span>'+
-          '<button type="button" class="copy-btn">Copy</button></div>'+
-          '<div class="box-item-text"></div>';
-        item.querySelector('.box-item-text').textContent=b.text||'(no text detected)';
-        const btn=item.querySelector('.copy-btn');
-        btn.addEventListener('click',()=>copyText(b.text||'',btn));
-        list.appendChild(item);
-      }
+    const old=stage.querySelector('.text-layer'); if(old) old.remove();
+    const o=ocr[side]; if(!o.ocrW||!o.ocrH) return;
+    const layer=document.createElement('div'); layer.className='text-layer';
+    (o.lines||[]).forEach(l=>{
+      const s=document.createElement('span');
+      s.textContent=l.text;
+      s.style.left=(l.x0/o.ocrW*100)+'%';
+      s.style.top=(l.y0/o.ocrH*100)+'%';
+      s.style.fontSize=((l.y1-l.y0)/o.ocrW*100)+'cqw';
+      layer.appendChild(s);
     });
-    if(list) list.classList.add('show');
+    stage.appendChild(layer);
+    stage.classList.add('text-mode');
   }
   // Detect the drawn rectangles: a box is a white area walled off from the page by a dark border.
   function detectBoxes(url){
@@ -708,26 +701,23 @@
   async function runOCR(side,url){
     const st=$(side+'Status');
     if(typeof Tesseract==='undefined'){st.textContent='OCR library not loaded (needs internet).';return;}
-    st.textContent='Detecting boxes…';
+    st.textContent='Reading picture…';
     $(side+'Add').disabled=true;
     try{
-      const det=await detectBoxes(url);
       const pre=await preprocess(url);
       const worker=await Tesseract.createWorker('eng',1,{logger:m=>{
-        if(m.status==='recognizing text') st.textContent='Reading text… '+Math.round(m.progress*100)+'%';
+        if(m.status==='recognizing text') st.textContent='Reading picture… '+Math.round(m.progress*100)+'%';
       }});
       const {data}=await worker.recognize(pre.url,{},{blocks:true,text:true,hocr:true});
       await worker.terminate();
       const lines=parseLines(data.hocr);
       ocr[side].ocrW=pre.w; ocr[side].ocrH=pre.h;
-      ocr[side].boxes = det.boxes.length>=2
-        ? assignTextToBoxes(det.boxes, lines, pre.w, pre.h)
-        : assignRegions(lines, pre.w, pre.h);           // fallback: fixed 15-box layout
-      ocr[side].chunks=ocr[side].boxes.map(b=>b.text).filter(Boolean);
+      ocr[side].lines=lines;
+      ocr[side].chunks=lines.map(l=>l.text);
       ocr[side].ready=true;
-      renderRefBoxes(side);
+      renderTextLayer(side);
       $(side+'Add').disabled=false;
-      st.textContent='Found '+ocr[side].boxes.length+' boxes. Copy a box below, then paste into a cell.';
+      st.textContent='Text ready — select any text on the picture, copy it, and paste into a cell.';
     }catch(err){console.error(err);st.textContent='Could not read the image.';}
   }
   function matchChunk(side,typed){
