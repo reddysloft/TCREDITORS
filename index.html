@@ -70,6 +70,17 @@
     .ref-box:active{cursor:grabbing}
     .ref-box-badge{position:absolute;top:0;left:0;background:var(--accent);color:#1a1a1a;font-size:.58rem;font-weight:700;padding:0 4px;border-radius:0 0 4px 0;line-height:1.5}
     .num-cell.drop-hover{outline:2px dashed var(--accent);outline-offset:1px;background:rgba(201,162,75,.10)}
+    /* detected-box list with copy buttons */
+    .box-list{display:none;margin-top:12px;gap:8px;grid-template-columns:1fr 1fr}
+    .box-list.show{display:grid}
+    @media (max-width:600px){.box-list.show{grid-template-columns:1fr}}
+    .box-item{background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px}
+    .box-item-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+    .box-item-badge{background:var(--accent);color:#1a1a1a;font-weight:700;font-size:.62rem;padding:2px 8px;border-radius:999px;letter-spacing:.04em}
+    .copy-btn{background:transparent;border:1px solid var(--line-2);color:var(--ink);border-radius:6px;padding:4px 12px;font-family:inherit;font-size:.74rem;cursor:pointer;transition:.15s}
+    .copy-btn:hover{border-color:var(--accent);color:var(--accent)}
+    .copy-btn.copied{background:var(--accent);color:#1a1a1a;border-color:var(--accent)}
+    .box-item-text{font-family:'Courier Prime','Courier New',monospace;font-size:.72rem;line-height:1.35;white-space:pre-wrap;color:#eee;background:#0f0f0f;border-radius:5px;padding:7px;max-height:130px;overflow:auto;user-select:text;-webkit-user-select:text}
     .ref-box.picked{background:rgba(236,28,36,.30);border-color:#ec1c24;box-shadow:inset 0 0 0 2px #ec1c24}
     .num-cell.just-filled{outline:2px solid var(--accent);background:rgba(201,162,75,.14)}
     .tpl-stage.align .ov{touch-action:none}
@@ -219,9 +230,10 @@
       <!-- Father's pedigree -->
       <section class="block">
         <div class="block-title">Father's pedigree</div>
-        <div class="block-sub">Upload the father's pedigree. On a laptop, drag a box onto a cell. On mobile, tap a box then tap a cell.</div>
+        <div class="block-sub">Upload the father's pedigree. Each detected box appears below with a Copy button — copy a box, then paste it into the matching cell (and edit if needed).</div>
         <label class="upload">Upload Father Pedigree (PNG / JPG)<input type="file" id="fatherUpload" accept="image/png,image/jpeg" /></label>
         <div class="ref-stage" id="fatherRefStage"></div>
+        <div class="box-list" id="fatherBoxList"></div>
         <div class="cells-group" id="fatherCells"></div>
         <div class="cell-actions" id="fatherActions">
           <button class="btn-add" id="fatherAdd" type="button" disabled>Add to template</button>
@@ -232,9 +244,10 @@
       <!-- Mother's pedigree -->
       <section class="block">
         <div class="block-title">Mother's pedigree</div>
-        <div class="block-sub">Upload the mother's pedigree. On a laptop, drag a box onto a cell. On mobile, tap a box then tap a cell.</div>
+        <div class="block-sub">Upload the mother's pedigree. Each detected box appears below with a Copy button — copy a box, then paste it into the matching cell (and edit if needed).</div>
         <label class="upload">Upload Mother Pedigree (PNG / JPG)<input type="file" id="motherUpload" accept="image/png,image/jpeg" /></label>
         <div class="ref-stage" id="motherRefStage"></div>
+        <div class="box-list" id="motherBoxList"></div>
         <div class="cells-group" id="motherCells"></div>
         <div class="cell-actions" id="motherActions">
           <button class="btn-add" id="motherAdd" type="button" disabled>Add to template</button>
@@ -567,21 +580,50 @@
     stage.querySelector('img').src=ocr[side].url;
     stage.style.display='block';
   }
+  function fallbackCopy(text,done){
+    const ta=document.createElement('textarea');
+    ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try{document.execCommand('copy');}catch(e){}
+    ta.remove(); if(done)done();
+  }
+  function copyText(text,btn){
+    const done=()=>{
+      if(btn){btn.classList.add('copied');btn.textContent='Copied';setTimeout(()=>{btn.classList.remove('copied');btn.textContent='Copy';},1300);}
+      showToast('Box text copied — paste it into a cell');
+    };
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      navigator.clipboard.writeText(text).then(done,()=>fallbackCopy(text,done));
+    else fallbackCopy(text,done);
+  }
   function renderRefBoxes(side){
     const stage=$(side+'RefStage'); if(!stage) return;
     [].slice.call(stage.querySelectorAll('.ref-box')).forEach(e=>e.remove());
+    const list=$(side+'BoxList'); if(list) list.innerHTML='';
     const o=ocr[side];
     (o.boxes||[]).forEach((b,i)=>{
+      // gold region over the picture: click/tap to copy its text
       const d=document.createElement('div');
       d.className='ref-box';
       d.style.left=b.left+'%'; d.style.top=b.top+'%'; d.style.width=b.width+'%'; d.style.height=b.height+'%';
-      d.draggable=true;
-      d.title=b.text||b.label||('Box '+(i+1));
+      d.title='Box '+(i+1)+(b.text?' — click to copy':'');
       d.innerHTML='<span class="ref-box-badge">'+(i+1)+'</span>';
-      d.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',b.text||'');e.dataTransfer.effectAllowed='copy';});
-      d.addEventListener('click',()=>pickRefBox(side,b.text||'',d));
+      d.addEventListener('click',()=>copyText(b.text||''));
       stage.appendChild(d);
+      // list item below: shows the recognised text + a Copy button
+      if(list){
+        const item=document.createElement('div');
+        item.className='box-item';
+        item.innerHTML='<div class="box-item-head"><span class="box-item-badge">Box '+(i+1)+'</span>'+
+          '<button type="button" class="copy-btn">Copy</button></div>'+
+          '<div class="box-item-text"></div>';
+        item.querySelector('.box-item-text').textContent=b.text||'(no text detected)';
+        const btn=item.querySelector('.copy-btn');
+        btn.addEventListener('click',()=>copyText(b.text||'',btn));
+        list.appendChild(item);
+      }
     });
+    if(list) list.classList.add('show');
   }
   // Detect the drawn rectangles: a box is a white area walled off from the page by a dark border.
   function detectBoxes(url){
@@ -685,7 +727,7 @@
       ocr[side].ready=true;
       renderRefBoxes(side);
       $(side+'Add').disabled=false;
-      st.textContent='Found '+ocr[side].boxes.length+' boxes. Drag any box onto a cell.';
+      st.textContent='Found '+ocr[side].boxes.length+' boxes. Copy a box below, then paste into a cell.';
     }catch(err){console.error(err);st.textContent='Could not read the image.';}
   }
   function matchChunk(side,typed){
