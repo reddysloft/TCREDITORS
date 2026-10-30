@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TCR Editors — Pedigree Builder</title>
+  <meta name="description" content="Build, fill, and export pigeon pedigrees as JPG or PDF." />
+  <link rel="icon" type="image/png" href="TCR%20logo.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0a0a0a; --panel:#121212; --panel-2:#1a1a1a;
+      --line:#262626; --line-2:#333;
+      --ink:#f5f5f5; --sub:#9a9a9a;
+      --input:#d9dde3; --input-ink:#0a0a0a;
+      --accent:#c9a24b; --accent-700:#a9862f;
+      --radius:10px; --maxw:1440px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+    h1,h2,h3{font-family:'Playfair Display',Georgia,serif;margin:0}
+    .container{max-width:var(--maxw);margin:0 auto;padding:28px 24px 100px}
+
+    /* HEADER */
+    .site-header{display:flex;align-items:center;gap:20px;padding:20px 0 28px;border-bottom:1px solid var(--line);margin-bottom:28px}
+    .brand-logo{flex:none;width:clamp(64px,8vw,92px);height:auto;filter:drop-shadow(0 8px 28px rgba(201,162,75,.35))}
+    .brand-text{display:flex;flex-direction:column;gap:4px}
+    .site-name{background:transparent;color:var(--accent);font-family:'Playfair Display',serif;font-weight:700;font-size:clamp(1.5rem,3vw,2.2rem);letter-spacing:.03em;border:none;outline:none;padding:0;text-shadow:0 2px 14px rgba(201,162,75,.3)}
+    .tag{color:var(--sub);font-size:.82rem;letter-spacing:.16em;text-transform:uppercase}
+
+    /* WORKSPACE: form left, sticky preview right */
+    .workspace{display:grid;grid-template-columns:1fr 400px;gap:30px;align-items:start}
+    @media (max-width:1080px){.workspace{grid-template-columns:1fr}}
+
+    /* FORM */
+    .block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 20px 22px;margin-bottom:20px}
+    .block-title{font-size:1.25rem;font-weight:700;color:#fff;margin-bottom:4px}
+    .block-sub{color:var(--sub);font-size:.85rem;margin-bottom:16px}
+
+    .pill{width:100%;background:var(--input);color:var(--input-ink);border:none;border-radius:8px;padding:11px 14px;font-family:inherit;font-size:.9rem;font-weight:600;outline:none;transition:box-shadow .15s}
+    .pill::placeholder{color:#565b63;font-weight:500}
+    .pill:focus{box-shadow:0 0 0 2px var(--accent)}
+    textarea.pill{resize:vertical;min-height:64px;font-weight:500;line-height:1.45}
+
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    @media (max-width:600px){.grid-3{grid-template-columns:1fr}}
+
+    /* bird cards */
+    .bird-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media (max-width:600px){.bird-grid{grid-template-columns:1fr}}
+    .bird-card{background:var(--panel-2);border:1px solid var(--line-2);border-radius:10px;padding:12px}
+    .bird-card .bc-title{font-family:'Inter',sans-serif;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:9px}
+    .bird-card .pill{margin-bottom:8px}
+    .bird-card .pill:last-child{margin-bottom:0}
+
+    /* father/mother pedigree uploads + numbered cells */
+    .ref-stage{display:none;position:relative;max-width:100%;margin:14px 0 2px;border:1px solid var(--line-2);border-radius:8px;overflow:hidden;line-height:0}
+    .ref-img-el{display:block;width:100%;height:auto}
+    .ref-box{position:absolute;border:1.5px solid var(--accent);background:rgba(201,162,75,.14);cursor:grab;border-radius:3px}
+    .ref-box:hover{background:rgba(201,162,75,.32)}
+    .ref-box:active{cursor:grabbing}
+    .ref-box-badge{position:absolute;top:0;left:0;background:var(--accent);color:#1a1a1a;font-size:.58rem;font-weight:700;padding:0 4px;border-radius:0 0 4px 0;line-height:1.5}
+    .num-cell.drop-hover{outline:2px dashed var(--accent);outline-offset:1px;background:rgba(201,162,75,.10)}
+    .ref-box.picked{background:rgba(236,28,36,.30);border-color:#ec1c24;box-shadow:inset 0 0 0 2px #ec1c24}
+    .num-cell.just-filled{outline:2px solid var(--accent);background:rgba(201,162,75,.14)}
+    .tpl-stage.align .ov{touch-action:none}
+
+    /* ---------- MOBILE ---------- */
+    @media (max-width:600px){
+      .container{padding:16px 12px 72px}
+      .block{padding:15px 13px;margin-bottom:16px}
+      .block-title{font-size:1.1rem}
+      .site-header{gap:14px;padding:14px 0 18px}
+      .site-name{font-size:1.35rem}
+      .brand-logo{width:54px}
+      .workspace{gap:20px}
+      .actions{margin-top:18px;gap:8px}
+      .actions .action-label{font-size:1.1rem}
+      .actions .btn{font-size:1.02rem;padding:8px 12px}
+      .tcol{min-width:150px}
+      .ref-box-badge{font-size:.5rem}
+      .dropdown-toggle{font-size:.9rem}
+    }
+    .cells-group{display:none;margin-top:14px}
+    .cells-group.show{display:block}
+    /* pedigree-tree arrangement of the 7 cells */
+    .tree{display:flex;gap:10px;align-items:stretch;overflow-x:auto;padding-bottom:6px}
+    .tcol{flex:1 1 0;min-width:168px;display:flex;flex-direction:column;gap:10px}
+    .tcol-1{justify-content:center}
+    .tcol-2{justify-content:space-around}
+    .tcol-3{justify-content:space-between}
+    .num-cell{background:var(--panel-2);border:1px solid var(--line-2);border-radius:9px;padding:10px}
+    .num-cell-label{display:block;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:6px}
+    .cell-actions{display:none;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
+    .btn-add{background:var(--accent);color:#1a1a1a;border:none;border-radius:8px;padding:11px 24px;font-family:inherit;font-weight:700;font-size:.9rem;cursor:pointer;transition:.15s}
+    .btn-add:hover{background:#d8b45e}
+    .btn-add:disabled{opacity:.5;cursor:not-allowed}
+    .ocr-status{color:var(--sub);font-size:.82rem}
+    .num-cell .ring-in{margin-bottom:8px}
+    .num-cell .box-in{min-height:58px;font-weight:500;line-height:1.4;font-size:.8rem}
+    .num-cell .cell-hint{display:block;color:var(--sub);font-size:.68rem;margin-top:5px}
+
+    /* upload */
+    .upload{display:inline-flex;align-items:center;gap:8px;background:var(--input);color:var(--input-ink);padding:10px 16px;border-radius:7px;cursor:pointer;font-size:.82rem;font-weight:700;transition:.15s;border:1px solid transparent}
+    .upload:hover{background:#fff;border-color:var(--accent)}
+    .upload input{display:none}
+    .logo-row{display:flex;align-items:center;gap:16px}
+    .logo-chip{width:64px;height:64px;border-radius:8px;border:1px solid var(--line-2);object-fit:contain;background:#000;display:none}
+    .logo-chip.show{display:block}
+    .btn-mini{background:transparent;border:1px solid var(--line-2);color:var(--sub);border-radius:7px;padding:8px 12px;cursor:pointer;font-family:inherit;font-size:.82rem;transition:.15s}
+    .btn-mini:hover{border-color:var(--accent);color:var(--ink)}
+
+    /* dropdown */
+    .dropdown{position:relative;display:block}
+    .dropdown-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;cursor:pointer;background:var(--panel-2);color:var(--ink);border:1px solid var(--line-2);border-radius:var(--radius);padding:12px 16px;font-family:inherit;font-size:.95rem;font-weight:600;transition:.15s}
+    .dropdown-toggle:hover,.dropdown.open .dropdown-toggle{border-color:var(--accent)}
+    .dropdown-toggle .caret{color:var(--accent);transition:transform .2s}
+    .dropdown.open .dropdown-toggle .caret{transform:rotate(180deg)}
+    .dropdown-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:15;background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--radius);padding:6px;display:none;flex-direction:column;gap:4px;box-shadow:0 20px 40px -18px rgba(0,0,0,.8)}
+    .dropdown.open .dropdown-menu{display:flex}
+    .dropdown-item{display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:1px solid transparent;border-radius:7px;padding:8px;cursor:pointer;color:var(--ink);font-family:inherit;font-size:.92rem;font-weight:500;text-align:left}
+    .dropdown-item:hover{background:#242424;border-color:var(--line-2)}
+    .dropdown-item.active{border-color:var(--accent);background:rgba(201,162,75,.1)}
+    .tpl-thumb{width:42px;height:42px;object-fit:cover;border-radius:6px;border:1px solid var(--line-2);flex:none;background:#000}
+    .tpl-none{display:grid;place-items:center;color:var(--sub)}
+
+    /* PREVIEW COLUMN */
+    .preview-col{position:sticky;top:20px}
+    @media (max-width:1080px){.preview-col{position:static}}
+    .preview-head{display:flex;align-items:center;justify-content:space-between;margin:14px 0 10px}
+    .preview-head h3{font-size:1rem;color:var(--accent);font-family:'Inter',sans-serif;font-weight:600;letter-spacing:.04em}
+    .align-ctrl{display:flex;align-items:center;gap:10px;font-size:.8rem;color:var(--sub);margin-bottom:10px;flex-wrap:wrap}
+    .align-ctrl label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+
+    /* STAGE */
+    .tpl-stage{position:relative;container-type:inline-size;width:100%;border-radius:8px;overflow:hidden;background:#fff;border:1px solid var(--line-2);min-height:120px}
+    .tpl-stage img#stageImg{width:100%;height:auto;display:block}
+    .stage-empty{display:grid;place-items:center;height:460px;color:#888;font-size:.9rem;text-align:center;padding:20px;font-family:'Inter',sans-serif}
+
+    .ov{position:absolute;overflow:hidden;box-sizing:border-box;pointer-events:none}
+    .ov-text{width:100%;height:100%;overflow:hidden;font-family:'Courier Prime','Courier New',monospace;color:#000;font-size:1.5cqw;line-height:1.18;text-transform:uppercase;white-space:pre-wrap;word-break:break-word;padding:1cqw 1.1cqw}
+    .ov-text .l1{color:#ec1c24;font-weight:700}
+    .ov-text .lb{font-weight:700}
+    .ov-text .ln{font-weight:400;margin-top:1.05em}
+
+    .ov-logo img{width:100%;height:100%;object-fit:contain;display:block}
+    .ov-title .ov-text{font-family:'Inter',sans-serif;font-weight:700;text-align:center;font-size:2.4cqw;text-transform:uppercase;letter-spacing:.02em;padding:0;color:#000}
+    .ov-footer .ov-text{font-size:1.45cqw;line-height:1.25}
+    .ov-footer .ft-loft{font-weight:700;font-size:1.25em}
+    .ov-footer .ft-b{font-weight:700}
+
+    .rz{display:none}
+    .tpl-stage.align .ov{pointer-events:auto;cursor:move;outline:1px dashed rgba(236,28,36,.85);outline-offset:-1px}
+    .tpl-stage.align .ov:hover{background:rgba(236,28,36,.06)}
+    .tpl-stage.align .rz{display:block;position:absolute;right:0;bottom:0;width:14px;height:14px;background:#ec1c24;border:2px solid #fff;cursor:nwse-resize}
+
+    /* ACTIONS */
+    .actions{display:flex;gap:14px;justify-content:center;align-items:center;margin-top:26px;flex-wrap:wrap}
+    .actions .action-label{font-family:'Playfair Display',serif;font-weight:700;font-size:1.3rem;color:#fff;width:100%;text-align:center;margin-bottom:2px}
+    .btn{font-family:'Playfair Display',serif;font-weight:700;font-size:1.2rem;color:#fff;background:transparent;border:none;cursor:pointer;padding:9px 22px;transition:.2s;border-bottom:2px solid transparent}
+    .btn:hover{color:var(--accent);border-bottom-color:var(--accent)}
+    .btn.primary{color:var(--accent)}
+
+    /* MODAL */
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:flex-start;justify-content:center;padding:30px 20px;overflow:auto;z-index:50}
+    .modal.open{display:flex}
+    .modal-inner{position:relative;max-width:820px;width:100%}
+    .modal-inner img{width:100%;height:auto;border-radius:8px;box-shadow:0 30px 80px -20px rgba(0,0,0,.9);background:#fff}
+    .modal-close{position:absolute;top:-14px;right:-14px;background:#fff;border:none;width:38px;height:38px;border-radius:999px;cursor:pointer;font-size:1.1rem;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#1a1a1a;color:#fff;padding:12px 20px;border-radius:999px;font-size:.88rem;border:1px solid var(--accent);opacity:0;transition:.25s;pointer-events:none;z-index:60}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <header class="site-header">
+    <img class="brand-logo" src="TCR%20logo.png" alt="TCR Editors logo" />
+    <div class="brand-text">
+      <input class="site-name" id="siteName" value="TCR EDITORS" aria-label="Site name" />
+      <span class="tag">Pigeon Pedigree Builder</span>
+    </div>
+  </header>
+
+  <div class="workspace">
+
+    <!-- ============ LEFT: FORM ============ -->
+    <div class="form-col">
+
+      <!-- Logo upload -->
+      <section class="block">
+        <div class="block-title">Pedigree Logo</div>
+        <div class="block-sub">Upload a logo for this pedigree (shown top-left of the sheet).</div>
+        <div class="logo-row">
+          <label class="upload">Upload Logo (PNG / JPG)<input type="file" id="logoInput" accept="image/png,image/jpeg" /></label>
+          <img class="logo-chip" id="logoChip" alt="logo" />
+          <button class="btn-mini" id="logoClear" type="button" style="display:none">Remove</button>
+        </div>
+      </section>
+
+      <!-- Subject -->
+      <section class="block">
+        <div class="block-title">Bird details</div>
+        <div class="block-sub">The main bird — fills the first box. Ring number shows in red.</div>
+        <div id="formSubject"></div>
+      </section>
+
+      <!-- Father's pedigree -->
+      <section class="block">
+        <div class="block-title">Father's pedigree</div>
+        <div class="block-sub">Upload the father's pedigree. On a laptop, drag a box onto a cell. On mobile, tap a box then tap a cell.</div>
+        <label class="upload">Upload Father Pedigree (PNG / JPG)<input type="file" id="fatherUpload" accept="image/png,image/jpeg" /></label>
+        <div class="ref-stage" id="fatherRefStage"></div>
+        <div class="cells-group" id="fatherCells"></div>
+        <div class="cell-actions" id="fatherActions">
+          <button class="btn-add" id="fatherAdd" type="button" disabled>Add to template</button>
+          <span class="ocr-status" id="fatherStatus"></span>
+        </div>
+      </section>
+
+      <!-- Mother's pedigree -->
+      <section class="block">
+        <div class="block-title">Mother's pedigree</div>
+        <div class="block-sub">Upload the mother's pedigree. On a laptop, drag a box onto a cell. On mobile, tap a box then tap a cell.</div>
+        <label class="upload">Upload Mother Pedigree (PNG / JPG)<input type="file" id="motherUpload" accept="image/png,image/jpeg" /></label>
+        <div class="ref-stage" id="motherRefStage"></div>
+        <div class="cells-group" id="motherCells"></div>
+        <div class="cell-actions" id="motherActions">
+          <button class="btn-add" id="motherAdd" type="button" disabled>Add to template</button>
+          <span class="ocr-status" id="motherStatus"></span>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <section class="block">
+        <div class="block-title">Footer details</div>
+        <div class="block-sub">Shown bottom-left of the sheet.</div>
+        <input class="pill" id="ftLoft" placeholder="Loft name" style="margin-bottom:10px" />
+        <input class="pill" id="ftOwner" placeholder="Owner / Fancier name" style="margin-bottom:10px" />
+        <textarea class="pill" id="ftAddr" placeholder="Address" style="margin-bottom:10px"></textarea>
+        <div class="grid-3">
+          <input class="pill" id="ftPhone" placeholder="Phone" />
+          <input class="pill" id="ftEmail" placeholder="Email" style="grid-column:span 2" />
+        </div>
+      </section>
+
+      <!-- Actions -->
+      <div class="actions">
+        <div class="action-label">Export</div>
+        <button class="btn primary" id="btnPreview">Preview</button>
+        <button class="btn" id="btnJpg">Save as JPG</button>
+        <button class="btn" id="btnPdf">Save as PDF</button>
+      </div>
+    </div>
+
+    <!-- ============ RIGHT: PREVIEW ============ -->
+    <aside class="preview-col">
+      <!-- template picker -->
+      <div class="dropdown" id="templateDropdown">
+        <button class="dropdown-toggle" id="templateToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="templateToggleLabel">Choose a template</span>
+          <span class="caret">▾</span>
+        </button>
+        <div class="dropdown-menu" id="templateMenu" role="menu">
+          <button class="dropdown-item" role="menuitem" data-template="template-1.png" data-name="Template 1">
+            <img src="template-1.png" alt="" class="tpl-thumb" /><span>Template 1</span>
+          </button>
+          <button class="dropdown-item" role="menuitem" data-template="template-2.png" data-name="Template 2">
+            <img src="template-2.png" alt="" class="tpl-thumb" /><span>Template 2</span>
+          </button>
+          <button class="dropdown-item" role="menuitem" data-template="" data-name="None">
+            <span class="tpl-thumb tpl-none">✕</span><span>None</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="preview-head">
+        <h3>Live preview</h3>
+      </div>
+      <div class="align-ctrl">
+        <label><input type="checkbox" id="alignMode" /> Align mode (drag &amp; resize boxes)</label>
+        <button class="btn-mini" id="resetPos" type="button">Reset positions</button>
+      </div>
+
+      <div class="tpl-stage" id="stage">
+        <div class="stage-empty" id="stageEmpty">Select a template above to start building the pedigree.</div>
+        <img id="stageImg" alt="template" style="display:none" />
+        <div class="ov ov-title" id="ov-title"><div class="ov-text" id="titleText"></div><span class="rz"></span></div>
+        <div class="ov ov-logo" id="ov-logo"><img id="stageLogo" alt="" /><span class="rz"></span></div>
+        <div class="ov ov-footer" id="ov-footer"><div class="ov-text" id="footerText"></div><span class="rz"></span></div>
+      </div>
+    </aside>
+
+  </div>
+</div>
+
+<!-- PREVIEW MODAL -->
+<div class="modal" id="modal" role="dialog" aria-modal="true">
+  <div class="modal-inner">
+    <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
+    <img id="modalImg" alt="Pedigree preview" />
+  </div>
+</div>
+
+<div class="toast" id="toast">Saved</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- BIRDS ----------
+  const BIRDS = [
+    { key:'subject', label:'Subject — this bird', group:'formSubject' },
+    { key:'f',  label:'Father',  group:'formGen1' },
+    { key:'m',  label:'Mother',  group:'formGen1' },
+    { key:'ff', label:"Father's Father",  group:'formGen2' },
+    { key:'fm', label:"Father's Mother",  group:'formGen2' },
+    { key:'mf', label:"Mother's Father",  group:'formGen2' },
+    { key:'mm', label:"Mother's Mother",  group:'formGen2' },
+    { key:'fff', label:"Father › Father › Father", group:'formGen3' },
+    { key:'ffm', label:"Father › Father › Mother", group:'formGen3' },
+    { key:'fmf', label:"Father › Mother › Father", group:'formGen3' },
+    { key:'fmm', label:"Father › Mother › Mother", group:'formGen3' },
+    { key:'mff', label:"Mother › Father › Father", group:'formGen3' },
+    { key:'mfm', label:"Mother › Father › Mother", group:'formGen3' },
+    { key:'mmf', label:"Mother › Mother › Father", group:'formGen3' },
+    { key:'mmm', label:"Mother › Mother › Mother", group:'formGen3' },
+  ];
+
+  // ---------- TEMPLATES (title prefix + default positions, % of image) ----------
+  const TEMPLATES = {
+    'template-1.png': {
+      title:'PEDIGREE : ',
+      pos:{
+        title:{left:8,top:1,width:84,height:5},
+        logo:{left:1,top:1.5,width:16,height:11},
+        footer:{left:1.5,top:89,width:60,height:10},
+        subject:{left:1.2,top:40,width:20.5,height:22},
+        f:{left:22.5,top:15,width:19.5,height:20},
+        m:{left:22.5,top:60,width:19.5,height:20},
+        ff:{left:48,top:10,width:19.5,height:16},
+        fm:{left:48,top:37,width:19.5,height:16},
+        mf:{left:48,top:54,width:19.5,height:15},
+        mm:{left:48,top:77,width:19.5,height:15},
+        fff:{left:74,top:6,width:25,height:11},
+        ffm:{left:74,top:19,width:25,height:11},
+        fmf:{left:74,top:32,width:25,height:11},
+        fmm:{left:74,top:44,width:25,height:11},
+        mff:{left:74,top:55,width:25,height:11},
+        mfm:{left:74,top:67,width:25,height:11},
+        mmf:{left:74,top:79,width:25,height:11},
+        mmm:{left:74,top:90,width:25,height:11},
+      }
+    },
+    'template-2.png': {
+      title:'PIGEON PEDIGREE: ',
+      pos:{
+        title:{left:8,top:1,width:84,height:5},
+        logo:{left:1,top:1.5,width:16,height:11},
+        footer:{left:1.5,top:88,width:55,height:11},
+        subject:{left:1.2,top:28,width:21.5,height:44},
+        f:{left:24,top:8,width:20,height:38},
+        m:{left:24,top:52,width:20,height:42},
+        ff:{left:48,top:7,width:20,height:25},
+        fm:{left:48,top:33,width:20,height:22},
+        mf:{left:48,top:55,width:20,height:20},
+        mm:{left:48,top:77,width:20,height:20},
+        fff:{left:74,top:6,width:25,height:11},
+        ffm:{left:74,top:19,width:25,height:11},
+        fmf:{left:74,top:32,width:25,height:11},
+        fmm:{left:74,top:42,width:25,height:11},
+        mff:{left:74,top:53,width:25,height:11},
+        mfm:{left:74,top:65,width:25,height:11},
+        mmf:{left:74,top:78,width:25,height:11},
+        mmm:{left:74,top:90,width:25,height:11},
+      }
+    }
+  };
+
+  // ---------- STATE ----------
+  let current = null;                 // selected template file
+  let logoData = null;                // uploaded logo data URL
+  const saved = loadSaved();          // { templateFile: { key:{left,top,width,height} } }
+  const store = {};                   // key -> {ring,name,fancier,desc}
+  BIRDS.forEach(b=>store[b.key]={ring:'',name:'',fancier:'',desc:''});
+  const ocr = {
+    father:{ready:false,chunks:[],boxes:[],url:null,ocrW:0,ocrH:0},
+    mother:{ready:false,chunks:[],boxes:[],url:null,ocrW:0,ocrH:0}
+  };
+
+  // ---------- DOM ----------
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage');
+  const stageImg = $('stageImg');
+  const stageEmpty = $('stageEmpty');
+  const stageLogo = $('stageLogo');
+  const ovLogo = $('ov-logo');
+  const ovTitle = $('ov-title');
+  const ovFooter = $('ov-footer');
+  const titleText = $('titleText');
+  const footerText = $('footerText');
+
+  // ---------- UTIL ----------
+  function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+  function loadSaved(){try{return JSON.parse(localStorage.getItem('pedi_positions')||'{}');}catch(e){return {};}}
+  function persist(){localStorage.setItem('pedi_positions',JSON.stringify(saved));}
+
+  // ---------- CELL GROUPS (father / mother branches) ----------
+  const FATHER_CELLS=[
+    ['f',"Father"],['ff',"Father's Father"],['fm',"Father's Mother"],
+    ['fff',"Father's Father's Father"],['ffm',"Father's Father's Mother"],
+    ['fmf',"Father's Mother's Father"],['fmm',"Father's Mother's Mother"]
+  ];
+  const MOTHER_CELLS=[
+    ['m',"Mother"],['mf',"Mother's Father"],['mm',"Mother's Mother"],
+    ['mff',"Mother's Father's Father"],['mfm',"Mother's Father's Mother"],
+    ['mmf',"Mother's Mother's Father"],['mmm',"Mother's Mother's Mother"]
+  ];
+
+  // ---------- BUILD OVERLAYS (all 15 boxes) ----------
+  BIRDS.forEach(b=>{
+    const ov=document.createElement('div');
+    ov.className='ov ov-box';ov.id='ov-'+b.key;
+    ov.innerHTML='<div class="ov-text"></div><span class="rz"></span>';
+    stage.appendChild(ov);
+  });
+
+  // ---------- BUILD INPUT FORM ----------
+  $('formSubject').innerHTML =
+    `<div class="grid-3" style="margin-bottom:10px">
+       <input class="pill" data-bird="subject" data-f="ring" placeholder="Ring Number" />
+       <input class="pill" data-bird="subject" data-f="name" placeholder="Bird Name" />
+       <input class="pill" data-bird="subject" data-f="fancier" placeholder="Fancier Name" />
+     </div>
+     <textarea class="pill" data-bird="subject" data-f="desc" placeholder="Details / content"></textarea>`;
+
+  // Cells laid out as a pedigree tree: col1 = parent, col2 = grandparents, col3 = great-grandparents.
+  const FATHER_TREE={
+    col1:[['f','Father']],
+    col2:[['ff','Grand Father'],['fm','Grand Mother']],
+    col3:[['fff','Great Grand Father'],['ffm','Great Grand Mother'],['fmf','Great Grand Father'],['fmm','Great Grand Mother']]
+  };
+  const MOTHER_TREE={
+    col1:[['m','Mother']],
+    col2:[['mf','Grand Father'],['mm','Grand Mother']],
+    col3:[['mff','Great Grand Father'],['mfm','Great Grand Mother'],['mmf','Great Grand Father'],['mmm','Great Grand Mother']]
+  };
+  function cellHtml(key,label){
+    return `<div class="num-cell">`+
+      `<span class="num-cell-label">${esc(label)}</span>`+
+      `<input class="pill ring-in" data-key="${key}" placeholder="Ring no. (then Add)" />`+
+      `<textarea class="pill box-in" data-key="${key}" placeholder="Box content (edit after Add)"></textarea>`+
+    `</div>`;
+  }
+  function buildTree(containerId,tree){
+    const col=(cls,items)=>`<div class="tcol ${cls}">`+items.map(([k,l])=>cellHtml(k,l)).join('')+`</div>`;
+    $(containerId).innerHTML=`<div class="tree">`+col('tcol-1',tree.col1)+col('tcol-2',tree.col2)+col('tcol-3',tree.col3)+`</div>`;
+  }
+  buildTree('fatherCells',FATHER_TREE);
+  buildTree('motherCells',MOTHER_TREE);
+
+  // ---------- OCR: read the uploaded pedigree picture ----------
+  function norm(s){return String(s).toUpperCase().replace(/[^A-Z0-9]/g,'');}
+  function textOf(node){
+    if(!node) return '';
+    if(node.text) return node.text;
+    if(Array.isArray(node.paragraphs)&&node.paragraphs.length) return node.paragraphs.map(textOf).join('\n');
+    if(Array.isArray(node.lines)&&node.lines.length) return node.lines.map(l=>l.text||textOf(l)).join('\n');
+    if(Array.isArray(node.words)&&node.words.length) return node.words.map(w=>w.text||'').join(' ');
+    return '';
+  }
+  // Turn the OCR result into one chunk per pedigree box (spatial blocks preferred).
+  function chunksFromData(data){
+    let chunks=[];
+    if(Array.isArray(data.blocks)&&data.blocks.length)
+      chunks=data.blocks.map(textOf).map(s=>s.trim()).filter(Boolean);
+    if(chunks.length<2 && Array.isArray(data.paragraphs)&&data.paragraphs.length)
+      chunks=data.paragraphs.map(textOf).map(s=>s.trim()).filter(Boolean);
+    if(chunks.length<2){
+      const byBlank=(data.text||'').split(/\n\s*\n+/).map(s=>s.trim()).filter(Boolean);
+      chunks = byBlank.length>=2 ? byBlank : [(data.text||'').trim()];
+    }
+    return chunks.filter(Boolean);
+  }
+  // Fixed 15-box pedigree layout (subject + 2 + 4 + 8), as % of the uploaded picture.
+  // Tune these to match the uploaded pedigree exactly (calibrated from a reference).
+  const REF_LAYOUT=[
+    {label:'Subject',  left:1,    top:40,   width:23,   height:22},
+    {label:'Parent 1', left:25.5, top:19.5, width:23,   height:18},
+    {label:'Parent 2', left:25.5, top:64.5, width:23,   height:18},
+    {label:'GP 1',     left:50,   top:10.75,width:23,   height:13},
+    {label:'GP 2',     left:50,   top:33.25,width:23,   height:13},
+    {label:'GP 3',     left:50,   top:55.75,width:23,   height:13},
+    {label:'GP 4',     left:50,   top:78.25,width:23,   height:13},
+    {label:'GGP 1',    left:74.5, top:7.1,  width:24.5, height:9},
+    {label:'GGP 2',    left:74.5, top:18.4, width:24.5, height:9},
+    {label:'GGP 3',    left:74.5, top:29.6, width:24.5, height:9},
+    {label:'GGP 4',    left:74.5, top:40.9, width:24.5, height:9},
+    {label:'GGP 5',    left:74.5, top:52.1, width:24.5, height:9},
+    {label:'GGP 6',    left:74.5, top:63.4, width:24.5, height:9},
+    {label:'GGP 7',    left:74.5, top:74.6, width:24.5, height:9},
+    {label:'GGP 8',    left:74.5, top:85.9, width:24.5, height:9}
+  ];
+  function parseLines(hocr){
+    if(!hocr) return [];
+    let doc; try{ doc=new DOMParser().parseFromString(hocr,'text/html'); }catch(e){ return []; }
+    return [].slice.call(doc.querySelectorAll('.ocr_line,.ocr_header,.ocr_textfloat,.ocr_caption')).map(el=>{
+      const m=/bbox (\d+) (\d+) (\d+) (\d+)/.exec(el.getAttribute('title')||'');
+      const text=(el.textContent||'').replace(/\s+/g,' ').trim();
+      if(!m||!text) return null;
+      return {text,x0:+m[1],y0:+m[2],x1:+m[3],y1:+m[4]};
+    }).filter(Boolean);
+  }
+  // Assign each OCR line to the fixed region whose rectangle contains the line's centre.
+  function assignRegions(lines,W,H){
+    return REF_LAYOUT.map(r=>{
+      if(!W||!H) return Object.assign({text:''}, r);
+      const rx0=r.left/100*W, rx1=(r.left+r.width)/100*W, ry0=r.top/100*H, ry1=(r.top+r.height)/100*H;
+      const inside=lines.filter(l=>{
+        const cx=(l.x0+l.x1)/2, cy=(l.y0+l.y1)/2;
+        return cx>=rx0 && cx<=rx1 && cy>=ry0 && cy<=ry1;
+      }).sort((a,b)=> a.y0-b.y0);
+      return Object.assign({}, r, {text:inside.map(l=>l.text).join('\n')});
+    });
+  }
+  // Upscale + high-contrast black/white to help OCR read a styled scan. Returns {url,w,h}.
+  function preprocess(url){
+    return new Promise(resolve=>{
+      const img=new Image();
+      img.onload=()=>{
+        try{
+          const scale = img.width < 1600 ? 2 : 1;
+          const c=document.createElement('canvas');
+          c.width=img.width*scale; c.height=img.height*scale;
+          const ctx=c.getContext('2d');
+          ctx.drawImage(img,0,0,c.width,c.height);
+          const id=ctx.getImageData(0,0,c.width,c.height), d=id.data;
+          for(let i=0;i<d.length;i+=4){
+            const l=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+            const v=l<150?0:255;               // keep red/blue/black text, drop light bg
+            d[i]=d[i+1]=d[i+2]=v;
+          }
+          ctx.putImageData(id,0,0);
+          resolve({url:c.toDataURL('image/png'), w:c.width, h:c.height});
+        }catch(e){resolve({url:url, w:img.naturalWidth||0, h:img.naturalHeight||0});}
+      };
+      img.onerror=()=>resolve({url:url, w:0, h:0});
+      img.src=url;
+    });
+  }
+  // Show the uploaded picture as a reference, with draggable detected boxes overlaid.
+  function renderRefImage(side){
+    const stage=$(side+'RefStage');
+    stage.innerHTML='<img class="ref-img-el" alt="pedigree" />';
+    stage.querySelector('img').src=ocr[side].url;
+    stage.style.display='block';
+  }
+  function renderRefBoxes(side){
+    const stage=$(side+'RefStage'); if(!stage) return;
+    [].slice.call(stage.querySelectorAll('.ref-box')).forEach(e=>e.remove());
+    const o=ocr[side];
+    (o.boxes||[]).forEach((b,i)=>{
+      const d=document.createElement('div');
+      d.className='ref-box';
+      d.style.left=b.left+'%'; d.style.top=b.top+'%'; d.style.width=b.width+'%'; d.style.height=b.height+'%';
+      d.draggable=true;
+      d.title=b.text||b.label||('Box '+(i+1));
+      d.innerHTML='<span class="ref-box-badge">'+(i+1)+'</span>';
+      d.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',b.text||'');e.dataTransfer.effectAllowed='copy';});
+      d.addEventListener('click',()=>pickRefBox(side,b.text||'',d));
+      stage.appendChild(d);
+    });
+  }
+  // Detect the drawn rectangles: a box is a white area walled off from the page by a dark border.
+  function detectBoxes(url){
+    return new Promise(resolve=>{
+      const img=new Image();
+      img.onload=()=>{
+        try{
+          const maxW=900;
+          const s=img.width>maxW?maxW/img.width:1;
+          const W=Math.max(1,Math.round(img.width*s)), H=Math.max(1,Math.round(img.height*s));
+          const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+          const ctx=cv.getContext('2d');ctx.drawImage(img,0,0,W,H);
+          const px=ctx.getImageData(0,0,W,H).data, N=W*H;
+          const white=new Uint8Array(N);
+          for(let i=0,p=0;i<N;i++,p+=4){
+            const l=0.299*px[p]+0.587*px[p+1]+0.114*px[p+2];
+            white[i]= l>=180?1:0;                      // light = background/interior, dark = border/text
+          }
+          const label=new Uint8Array(N);              // 1 = outside background, 2 = counted interior
+          const q=new Int32Array(N); let qe=0,qs=0;
+          const seed=(i)=>{ if(white[i]&&!label[i]){label[i]=1;q[qe++]=i;} };
+          for(let x=0;x<W;x++){seed(x);seed((H-1)*W+x);}
+          for(let y=0;y<H;y++){seed(y*W);seed(y*W+W-1);}
+          while(qs<qe){
+            const i=q[qs++],x=i%W,y=(i/W)|0;
+            if(x>0)seed(i-1); if(x<W-1)seed(i+1); if(y>0)seed(i-W); if(y<H-1)seed(i+W);
+          }
+          const boxes=[]; const q2=new Int32Array(N);
+          for(let start=0;start<N;start++){
+            if(white[start]&&label[start]===0){
+              let h=0,t=0; q2[t++]=start; label[start]=2;
+              let minx=W,miny=H,maxx=0,maxy=0,area=0;
+              while(h<t){
+                const i=q2[h++],x=i%W,y=(i/W)|0;
+                if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;area++;
+                if(x>0){const j=i-1;if(white[j]&&label[j]===0){label[j]=2;q2[t++]=j;}}
+                if(x<W-1){const j=i+1;if(white[j]&&label[j]===0){label[j]=2;q2[t++]=j;}}
+                if(y>0){const j=i-W;if(white[j]&&label[j]===0){label[j]=2;q2[t++]=j;}}
+                if(y<H-1){const j=i+W;if(white[j]&&label[j]===0){label[j]=2;q2[t++]=j;}}
+              }
+              const bw=maxx-minx+1,bh=maxy-miny+1, fill=area/(bw*bh), af=area/N;
+              if(bw>=W*0.04 && bh>=H*0.015 && af>=0.003 && fill>=0.35){
+                const padX=W*0.006, padY=H*0.004;
+                const L=Math.max(0,minx-padX), T=Math.max(0,miny-padY);
+                const R=Math.min(W,maxx+padX), Bt=Math.min(H,maxy+padY);
+                boxes.push({left:L/W*100, top:T/H*100, width:(R-L)/W*100, height:(Bt-T)/H*100});
+              }
+            }
+          }
+          boxes.sort((a,b)=> a.left-b.left || a.top-b.top);
+          resolve({boxes});
+        }catch(e){resolve({boxes:[]});}
+      };
+      img.onerror=()=>resolve({boxes:[]});
+      img.src=url;
+    });
+  }
+  // Put each OCR line into the detected rectangle that contains its centre.
+  function assignTextToBoxes(boxes, lines, W, H){
+    const buckets=boxes.map(()=>[]);
+    lines.forEach(l=>{
+      const cx=(l.x0+l.x1)/2/W*100, cy=(l.y0+l.y1)/2/H*100;
+      for(let i=0;i<boxes.length;i++){const b=boxes[i];
+        if(cx>=b.left&&cx<=b.left+b.width&&cy>=b.top&&cy<=b.top+b.height){buckets[i].push(l);break;}}
+    });
+    return boxes.map((b,i)=>Object.assign({},b,{text:buckets[i].sort((p,q)=>p.y0-q.y0).map(l=>l.text).join('\n')}));
+  }
+  async function runOCR(side,url){
+    const st=$(side+'Status');
+    if(typeof Tesseract==='undefined'){st.textContent='OCR library not loaded (needs internet).';return;}
+    st.textContent='Detecting boxes…';
+    $(side+'Add').disabled=true;
+    try{
+      const det=await detectBoxes(url);
+      const pre=await preprocess(url);
+      const worker=await Tesseract.createWorker('eng',1,{logger:m=>{
+        if(m.status==='recognizing text') st.textContent='Reading text… '+Math.round(m.progress*100)+'%';
+      }});
+      const {data}=await worker.recognize(pre.url,{},{blocks:true,text:true,hocr:true});
+      await worker.terminate();
+      const lines=parseLines(data.hocr);
+      ocr[side].ocrW=pre.w; ocr[side].ocrH=pre.h;
+      ocr[side].boxes = det.boxes.length>=2
+        ? assignTextToBoxes(det.boxes, lines, pre.w, pre.h)
+        : assignRegions(lines, pre.w, pre.h);           // fallback: fixed 15-box layout
+      ocr[side].chunks=ocr[side].boxes.map(b=>b.text).filter(Boolean);
+      ocr[side].ready=true;
+      renderRefBoxes(side);
+      $(side+'Add').disabled=false;
+      st.textContent='Found '+ocr[side].boxes.length+' boxes. Drag any box onto a cell.';
+    }catch(err){console.error(err);st.textContent='Could not read the image.';}
+  }
+  function matchChunk(side,typed){
+    const chunks=ocr[side].chunks||[];
+    const t=norm(typed);
+    if(t){for(const ch of chunks){if(norm(ch).includes(t))return ch;}}
+    const digits=typed.replace(/\D/g,'');
+    if(digits.length>=2){for(const ch of chunks){if(norm(ch).includes(digits))return ch;}}
+    const toks=typed.toUpperCase().split(/\s+/).map(s=>s.replace(/[^A-Z0-9]/g,'')).filter(Boolean);
+    if(toks.length){for(const ch of chunks){const n=norm(ch);if(toks.every(tk=>n.includes(tk)))return ch;}}
+    return null;
+  }
+  // Pull the whole box: from the ring line to the end of its block,
+  // stopping if we reach another ring number the user entered in this section.
+  // A line that looks like the start of a new bird's box (a ring number header).
+  function isRingHeader(line){
+    const u=(line||'').toUpperCase().trim();
+    if(/PERSONAL\s+RING\s*\d/.test(u)) return true;
+    if(/[A-Z0-9]+-\d+/.test(u)) return true;   // dash-joined ring no.: 08177-19, 24-2091, GBP-98, BE 00-4403488
+    return false;
+  }
+  function parseBox(text){
+    const lines=(text||'').split('\n');
+    return { ring:(lines[0]||'').trim(), name:(lines[1]||'').trim(), fancier:(lines[2]||'').trim(), desc:lines.slice(3).join('\n') };
+  }
+  function setBox(key,text){
+    const ta=document.querySelector(`.box-in[data-key="${key}"]`);
+    if(ta) ta.value=text;
+    store[key]=parseBox(text);
+  }
+  function fillFromChunk(key,typed,chunk,others){
+    const lines=chunk.split(/\n/).map(s=>s.trim()).filter(Boolean);
+    const t=norm(typed), digits=typed.replace(/\D/g,'');
+    let idx=lines.findIndex(l=>norm(l).includes(t)||(digits.length>=2&&norm(l).includes(digits)));
+    if(idx<0)idx=0;
+    const otherNorms=(others||[]).map(norm).filter(o=>o&&o!==t);
+    const out=[];
+    for(let i=idx+1;i<lines.length;i++){
+      const raw=lines[i], ln=norm(raw);
+      if(isRingHeader(raw)) break;                     // the next bird's box begins here -> stop
+      if(otherNorms.some(o=>ln.includes(o))) break;    // or another ring number you entered
+      out.push(raw);
+      if(out.length>=9) break;                          // safety cap
+    }
+    setBox(key,[typed,...out].join('\n'));
+  }
+  function runAdd(side,list){
+    const st=$(side+'Status');
+    if(!ocr[side].ready){st.textContent='Upload a pedigree picture first.';return;}
+    const typedAll=list.map(([k])=>{const el=document.querySelector(`.ring-in[data-key="${k}"]`);return (el.value||'').trim();}).filter(Boolean);
+    let filled=0,missed=0;
+    list.forEach(([key])=>{
+      const inp=document.querySelector(`.ring-in[data-key="${key}"]`);
+      const typed=(inp.value||'').trim();
+      if(!typed)return;
+      const chunk=matchChunk(side,typed);
+      if(chunk){fillFromChunk(key,typed,chunk,typedAll);filled++;}
+      else{setBox(key,typed);missed++;}
+    });
+    renderAll();
+    st.textContent=`Added ${filled}`+(missed?`, ${missed} not found`:'')+'. Edit any box below to correct the text.';
+  }
+
+  // ---------- UPLOAD WIRING ----------
+  function wireUpload(side,inputId,cellsId,actionsId){
+    $(inputId).addEventListener('change',e=>{
+      const file=e.target.files&&e.target.files[0];if(!file)return;
+      const r=new FileReader();
+      r.onload=ev=>{
+        ocr[side].url=ev.target.result;
+        renderRefImage(side);
+        $(cellsId).classList.add('show');
+        $(actionsId).style.display='flex';
+        ocr[side].ready=false;
+        runOCR(side,ocr[side].url);
+      };
+      r.readAsDataURL(file);
+    });
+  }
+  wireUpload('father','fatherUpload','fatherCells','fatherActions');
+  wireUpload('mother','motherUpload','motherCells','motherActions');
+  $('fatherAdd').addEventListener('click',()=>runAdd('father',FATHER_CELLS));
+  $('motherAdd').addEventListener('click',()=>runAdd('mother',MOTHER_CELLS));
+
+  // Drag a detected box from the picture and drop it onto a tree cell.
+  document.addEventListener('dragover',e=>{
+    const cell=e.target.closest&&e.target.closest('.num-cell');
+    if(cell){e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='copy';cell.classList.add('drop-hover');}
+  });
+  document.addEventListener('dragleave',e=>{
+    const cell=e.target.closest&&e.target.closest('.num-cell');
+    if(cell && !cell.contains(e.relatedTarget)) cell.classList.remove('drop-hover');
+  });
+  document.addEventListener('drop',e=>{
+    const cell=e.target.closest&&e.target.closest('.num-cell');
+    if(!cell) return;
+    e.preventDefault(); cell.classList.remove('drop-hover');
+    const text=e.dataTransfer?e.dataTransfer.getData('text/plain'):'';
+    if(!text) return;
+    const ta=cell.querySelector('.box-in'); if(!ta) return;
+    setBox(ta.dataset.key,text); renderAll();
+  });
+
+  // Tap-to-place (works on phones + laptops): tap a box on the picture, then tap a cell.
+  let picked=null;
+  function pickRefBox(side,text,el){
+    document.querySelectorAll('.ref-box.picked').forEach(x=>x.classList.remove('picked'));
+    picked={text:text};
+    if(el) el.classList.add('picked');
+    const st=$(side+'Status'); if(st) st.textContent='Box selected — now tap a cell to place it.';
+  }
+  document.addEventListener('click',e=>{
+    const cell=e.target.closest&&e.target.closest('.num-cell');
+    if(!cell||!picked) return;
+    const ta=cell.querySelector('.box-in'); if(!ta) return;
+    setBox(ta.dataset.key,picked.text); renderAll();
+    cell.classList.add('just-filled'); setTimeout(()=>cell.classList.remove('just-filled'),600);
+    document.querySelectorAll('.ref-box.picked').forEach(x=>x.classList.remove('picked'));
+    picked=null;
+  });
+
+  // ---------- READ DATA ----------
+  function getBird(key){ return store[key]; }
+
+  // ---------- POSITIONS ----------
+  function getPos(key){
+    const def=TEMPLATES[current].pos[key];
+    const s=saved[current]&&saved[current][key];
+    return s?Object.assign({},def,s):Object.assign({},def);
+  }
+  function applyPos(el,p){el.style.left=p.left+'%';el.style.top=p.top+'%';el.style.width=p.width+'%';el.style.height=p.height+'%';}
+  function savePos(key,p){saved[current]=saved[current]||{};saved[current][key]=p;persist();}
+
+  // ---------- RENDER ----------
+  function boxHtml(d){
+    const ring=(d.ring||'').trim(), name=(d.name||'').trim(), fancier=(d.fancier||'').trim(), desc=(d.desc||'');
+    let h='';
+    if(ring)    h+=`<div class="l1">${esc(ring)}</div>`;
+    if(name)    h+=`<div class="lb">${esc(name)}</div>`;
+    if(fancier) h+=`<div class="lb">${esc(fancier)}</div>`;
+    if(desc.trim()) h+=`<div class="ln">${esc(desc)}</div>`;
+    return h;
+  }
+  function renderAll(){
+    if(!current) return;
+    // boxes
+    BIRDS.forEach(b=>{
+      const ov=$('ov-'+b.key);
+      ov.querySelector('.ov-text').innerHTML=boxHtml(getBird(b.key));
+    });
+    // title
+    const subjRing=getBird('subject').ring;
+    titleText.textContent=(TEMPLATES[current].title+subjRing).trim();
+    // logo
+    if(logoData){stageLogo.src=logoData;ovLogo.style.display='block';}
+    else{ovLogo.style.display='none';}
+    // footer
+    const loft=$('ftLoft').value.trim(), owner=$('ftOwner').value.trim(),
+          addr=$('ftAddr').value, phone=$('ftPhone').value.trim(), email=$('ftEmail').value.trim();
+    let f='';
+    if(loft) f+=`<div class="ft-loft">${esc(loft)}</div>`;
+    if(owner) f+=`<div class="ft-b">${esc(owner)}</div>`;
+    if(addr.trim()) f+=`<div>${esc(addr)}</div>`;
+    if(phone) f+=`<div>CONTACT - ${esc(phone)}</div>`;
+    if(email) f+=`<div>MAIL ID - ${esc(email)}</div>`;
+    footerText.innerHTML=f;
+  }
+
+  function positionAll(){
+    if(!current) return;
+    ['title','logo','footer'].forEach(k=>applyPos($('ov-'+k),getPos(k)));
+    BIRDS.forEach(b=>applyPos($('ov-'+b.key),getPos(b.key)));
+  }
+
+  // ---------- SELECT TEMPLATE ----------
+  function selectTemplate(file){
+    current=file||null;
+    if(current){
+      stageImg.src=current;stageImg.style.display='block';stageEmpty.style.display='none';
+      positionAll();renderAll();
+    } else {
+      stageImg.style.display='none';stageEmpty.style.display='grid';
+      stageImg.removeAttribute('src');
+    }
+  }
+
+  // ---------- LIVE UPDATE ----------
+  document.querySelectorAll('[data-bird="subject"]').forEach(el=>el.addEventListener('input',()=>{
+    store.subject[el.dataset.f]=el.value; renderAll();
+  }));
+  document.querySelectorAll('.box-in').forEach(ta=>ta.addEventListener('input',()=>{
+    store[ta.dataset.key]=parseBox(ta.value); renderAll();
+  }));
+  ['ftLoft','ftOwner','ftAddr','ftPhone','ftEmail'].forEach(id=>$(id).addEventListener('input',renderAll));
+
+  // ---------- LOGO UPLOAD ----------
+  $('logoInput').addEventListener('change',e=>{
+    const file=e.target.files&&e.target.files[0];if(!file)return;
+    const r=new FileReader();
+    r.onload=ev=>{logoData=ev.target.result;const chip=$('logoChip');chip.src=logoData;chip.classList.add('show');$('logoClear').style.display='inline-block';renderAll();};
+    r.readAsDataURL(file);
+  });
+  $('logoClear').addEventListener('click',()=>{logoData=null;$('logoChip').classList.remove('show');$('logoChip').removeAttribute('src');$('logoClear').style.display='none';$('logoInput').value='';renderAll();});
+
+  // ---------- TEMPLATE DROPDOWN ----------
+  (function(){
+    const dd=$('templateDropdown'),tog=$('templateToggle'),lbl=$('templateToggleLabel'),menu=$('templateMenu');
+    const open=()=>{dd.classList.add('open');tog.setAttribute('aria-expanded','true');};
+    const close=()=>{dd.classList.remove('open');tog.setAttribute('aria-expanded','false');};
+    tog.addEventListener('click',e=>{e.stopPropagation();dd.classList.contains('open')?close():open();});
+    menu.querySelectorAll('.dropdown-item').forEach(it=>{
+      it.addEventListener('click',()=>{
+        const file=it.dataset.template,name=it.dataset.name;
+        menu.querySelectorAll('.dropdown-item').forEach(i=>i.classList.remove('active'));
+        it.classList.add('active');lbl.textContent=name;
+        selectTemplate(file);close();
+      });
+    });
+    document.addEventListener('click',e=>{if(!dd.contains(e.target))close();});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
+  })();
+
+  // ---------- ALIGN MODE (drag + resize) ----------
+  $('alignMode').addEventListener('change',e=>stage.classList.toggle('align',e.target.checked));
+  $('resetPos').addEventListener('click',()=>{
+    if(!current)return;
+    delete saved[current];persist();positionAll();showToast('Positions reset');
+  });
+
+  let drag=null;
+  stage.addEventListener('pointerdown',e=>{
+    if(!stage.classList.contains('align')||!current)return;
+    const ov=e.target.closest('.ov');if(!ov)return;
+    const key=ov.id.replace('ov-','');
+    const rect=stage.getBoundingClientRect();
+    const p=getPos(key);
+    drag={mode:e.target.classList.contains('rz')?'resize':'move',ov,key,rect,sx:e.clientX,sy:e.clientY,p:Object.assign({},p),np:null};
+    e.preventDefault();
+  });
+  window.addEventListener('pointermove',e=>{
+    if(!drag)return;
+    const dx=(e.clientX-drag.sx)/drag.rect.width*100;
+    const dy=(e.clientY-drag.sy)/drag.rect.height*100;
+    const np=Object.assign({},drag.p);
+    if(drag.mode==='move'){np.left=clamp(drag.p.left+dx,0,100-drag.p.width);np.top=clamp(drag.p.top+dy,0,100-drag.p.height);}
+    else{np.width=clamp(drag.p.width+dx,3,100);np.height=clamp(drag.p.height+dy,2,100);}
+    applyPos(drag.ov,np);drag.np=np;
+  });
+  window.addEventListener('pointerup',()=>{if(drag&&drag.np)savePos(drag.key,drag.np);drag=null;});
+
+  // ---------- RENDER STAGE TO CANVAS ----------
+  async function renderCanvas(){
+    if(!current){showToast('Pick a template first');return null;}
+    const w=stage.offsetWidth||400;
+    const scale=clamp(Math.round(1800/w),2,6);
+    const wasAlign=stage.classList.contains('align');
+    stage.classList.remove('align');
+    const canvas=await html2canvas(stage,{backgroundColor:'#fff',scale,useCORS:true,logging:false});
+    if(wasAlign)stage.classList.add('align');
+    return canvas;
+  }
+  function fileBase(){
+    const d=getBird('subject');
+    return ((d.name||d.ring||'pedigree').replace(/[^a-z0-9-_]+/gi,'_'))+'_pedigree';
+  }
+
+  // ---------- PREVIEW / EXPORT ----------
+  const modal=$('modal');
+  $('btnPreview').addEventListener('click',async()=>{
+    const c=await renderCanvas();if(!c)return;
+    $('modalImg').src=c.toDataURL('image/png');modal.classList.add('open');
+  });
+  $('modalClose').addEventListener('click',()=>modal.classList.remove('open'));
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open');});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')modal.classList.remove('open');});
+
+  $('btnJpg').addEventListener('click',async()=>{
+    try{const c=await renderCanvas();if(!c)return;
+      const a=document.createElement('a');a.href=c.toDataURL('image/jpeg',0.95);a.download=fileBase()+'.jpg';
+      document.body.appendChild(a);a.click();a.remove();showToast('Saved as JPG');
+    }catch(err){console.error(err);showToast('Could not save JPG');}
+  });
+  $('btnPdf').addEventListener('click',async()=>{
+    try{const c=await renderCanvas();if(!c)return;
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({orientation:'portrait',unit:'pt',format:'a4'});
+      const pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight(),m=24;
+      const availW=pw-m*2,ratio=c.height/c.width;
+      let iw=availW,ih=iw*ratio;
+      if(ih>ph-m*2){ih=ph-m*2;iw=ih/ratio;}
+      pdf.addImage(c.toDataURL('image/jpeg',0.95),'JPEG',(pw-iw)/2,m,iw,ih);
+      pdf.save(fileBase()+'.pdf');showToast('Saved as PDF');
+    }catch(err){console.error(err);showToast('Could not save PDF');}
+  });
+
+  // ---------- TOAST ----------
+  const toast=$('toast');
+  function showToast(m){toast.textContent=m;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),2200);}
+
+})();
+</script>
+
+</body>
+</html>
