@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ultraviolette vs Other EV Brands — Spec Comparison</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --line: #262b35;
+    --text: #e6e8ec;
+    --muted: #9aa3b2;
+    --accent: #7c5cff;
+    --win: #1e7f4f;
+    --lose: #9a3b3b;
+    --highlight: #241f3d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 1.9rem; margin: 0 0 6px; }
+  h2 { font-size: 1.3rem; margin: 40px 0 14px; border-left: 4px solid var(--accent); padding-left: 10px; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 8px; }
+  .note { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; color: var(--muted); font-size: 0.92rem; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; overflow: hidden; border-radius: 10px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  thead th { background: #1c2029; color: #cfd4dd; position: sticky; top: 0; font-weight: 600; }
+  tbody tr:nth-child(even) { background: #141720; }
+  .uv { background: var(--highlight) !important; }
+  .uv td:first-child { color: #b9a8ff; font-weight: 700; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .panel h3 { margin: 0 0 10px; font-size: 1.05rem; }
+  .win h3 { color: #4fd18b; }
+  .lose h3 { color: #f08a8a; }
+  ul { margin: 0; padding-left: 18px; }
+  li { margin: 6px 0; }
+  .verdict { background: linear-gradient(135deg, #1d1836, #171a21); border: 1px solid #3a2f66; border-radius: 12px; padding: 18px 20px; margin-top: 16px; }
+  .pill { display: inline-block; background: var(--accent); color: #fff; font-size: 0.72rem; padding: 2px 8px; border-radius: 20px; vertical-align: middle; margin-left: 6px; }
+  a { color: #8ea2ff; }
+  .src { font-size: 0.85rem; color: var(--muted); }
+  .src li { margin: 4px 0; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ultraviolette vs Other EV Two-Wheeler Brands</h1>
+  <p class="sub">Specification comparison &middot; As of Oct 2026</p>
+  <div class="note">
+    Prices are <strong>ex-showroom (India)</strong> and vary by city/variant. "Claimed/IDC range" is manufacturer-stated; real-world range is typically lower.
+    Ultraviolette is a <strong>performance</strong> brand (motorcycles F77/X-47, plus the upcoming Tesseract scooter), so it leads on power, speed, range and tech — but costs more and has a thinner service network than mass-market commuter brands.
+  </div>
+
+  <h2>1. Flagship specification table</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Brand (flagship model)</th>
+          <th>Type</th>
+          <th>Peak Power</th>
+          <th>Top Speed</th>
+          <th>0–100 km/h</th>
+          <th>Claimed Range</th>
+          <th>Battery</th>
+          <th>Fast Charge</th>
+          <th>Price (from)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="uv"><td>Ultraviolette F77</td><td>Motorcycle</td><td>30 kW (~40 hp)</td><td>~155 km/h</td><td>7.8 s</td><td>up to 323 km</td><td>10.3 kWh</td><td>20–80% in 45 min</td><td>₹3.09 L</td></tr>
+        <tr class="uv"><td>Ultraviolette X-47</td><td>Crossover motorcycle</td><td>up to 40 hp</td><td>~130+ km/h</td><td>fast</td><td>up to 323 km</td><td>7.1 / 10.3 kWh</td><td>fast</td><td>₹1.49 L (BaaS)</td></tr>
+        <tr class="uv"><td>Ultraviolette Tesseract <span class="pill">upcoming</span></td><td>Scooter</td><td>15 kW peak</td><td>125 km/h</td><td>quick</td><td>up to 261 km</td><td>3.5–6 kWh</td><td>2× segment avg</td><td>~₹1.45–2 L (est.)</td></tr>
+        <tr><td>Ola S1 Pro / Roadster</td><td>Scooter / Bike</td><td>~11 kW</td><td>126–130 km/h</td><td>~4 s (Roadster)</td><td>up to ~320 km (top var.)</td><td>up to 4+ kWh</td><td>good</td><td>₹1.05–1.25 L</td></tr>
+        <tr><td>Ather 450X</td><td>Scooter</td><td>6.4 kW</td><td>90 km/h</td><td>—</td><td>~100–160 km</td><td>3.7 kWh</td><td>good</td><td>₹1.52 L</td></tr>
+        <tr><td>TVS iQube</td><td>Scooter</td><td>3.0–4.4 kW</td><td>82 km/h</td><td>—</td><td>94–123 km</td><td>3.4 kWh</td><td>moderate</td><td>₹1.15 L</td></tr>
+        <tr><td>Bajaj Chetak 3501</td><td>Scooter</td><td>~4 kW</td><td>63–73 km/h</td><td>—</td><td>up to 153 km</td><td>3.5 kWh</td><td>0–80% in 3 h</td><td>₹0.95–1.19 L</td></tr>
+        <tr><td>Hero Vida VX2</td><td>Scooter</td><td>—</td><td>~80 km/h</td><td>—</td><td>93–128 km</td><td>swappable</td><td>moderate</td><td>₹1.10 L</td></tr>
+        <tr><td>River Indie</td><td>Utility scooter</td><td>6.7 kW</td><td>~90 km/h</td><td>—</td><td>~161 km</td><td>4 kWh</td><td>moderate</td><td>₹1.43 L</td></tr>
+        <tr><td>Revolt RV400</td><td>Motorcycle</td><td>3 kW</td><td>85 km/h</td><td>—</td><td>~150 km</td><td>3.24 kWh</td><td>moderate</td><td>₹1.39 L</td></tr>
+        <tr><td>Oben Rorr</td><td>Motorcycle</td><td>8 kW</td><td>~100 km/h</td><td>~3 s</td><td>~187 km</td><td>4.4 kWh</td><td>fast</td><td>~₹1.0 L</td></tr>
+        <tr><td>Simple One / Wave</td><td>Scooter</td><td>~8.5 kW</td><td>~105 km/h</td><td>—</td><td>up to ~181–212 km</td><td>up to 5 kWh</td><td>good</td><td>₹1.0–2.0 L</td></tr>
+        <tr><td>Bgauss</td><td>Scooter</td><td>low–mid</td><td>~60–90 km/h</td><td>—</td><td>~100 km</td><td>mid</td><td>moderate</td><td>~₹1.0 L</td></tr>
+        <tr><td>Ampere (budget)</td><td>Scooter</td><td>low</td><td>25–55 km/h</td><td>—</td><td>60–120 km</td><td>small</td><td>slow</td><td>~₹0.70 L</td></tr>
+        <tr><td>VinFast <span class="pill">upcoming</span></td><td>Scooter</td><td>TBD</td><td>TBD</td><td>TBD</td><td>TBD</td><td>swappable</td><td>TBD</td><td>TBD</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>2. Winner vs. trade-offs</h2>
+  <div class="grid">
+    <div class="panel win">
+      <h3>✔ Where Ultraviolette clearly wins</h3>
+      <ul>
+        <li><strong>Power &amp; performance</strong> — F77's ~30 kW is ~5–6× a typical commuter scooter (Ather 6.4 kW, iQube 3–4.4 kW).</li>
+        <li><strong>Top speed</strong> — ~155 km/h (F77) vs 80–90 km/h for most rivals.</li>
+        <li><strong>Range</strong> — up to 323 km claimed, highest in the group.</li>
+        <li><strong>Acceleration</strong> — 0–100 km/h in 7.8 s; competes with 150–200 cc petrol bikes.</li>
+        <li><strong>Fast charging</strong> — 20–80% in ~45 min.</li>
+        <li><strong>Technology</strong> — radar safety (X-47), new 100 V (VX-100) architecture, advanced BMS.</li>
+      </ul>
+    </div>
+    <div class="panel lose">
+      <h3>✘ Where it does NOT win</h3>
+      <ul>
+        <li><strong>Price</strong> — F77 ₹3.09 L is 2–3× an iQube / 450X / Chetak.</li>
+        <li><strong>Service network</strong> — thin outside metros; mainstream brands dominate tier-2 cities like Kurnool.</li>
+        <li><strong>Daily practicality</strong> — a performance bike, less convenient than a step-through scooter.</li>
+        <li><strong>Weight</strong> — F77 ~207 kg vs ~90–120 kg scooters.</li>
+        <li><strong>Affordability</strong> — Ampere, Bgauss, base Ola/Ather win on upfront cost.</li>
+        <li><strong>Scooter today</strong> — Tesseract not on sale yet (expected ~Jan 2027).</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>3. Bottom line</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>If you want…</th><th>Best choice</th></tr></thead>
+      <tbody>
+        <tr class="uv"><td>Maximum performance, range, speed, tech</td><td>Ultraviolette F77 / X-47</td></tr>
+        <tr><td>Best all-round scooter (today)</td><td>Ather 450 / TVS iQube</td></tr>
+        <tr><td>Longest range at lower price</td><td>Ola S1 X Plus</td></tr>
+        <tr><td>Cheapest entry / easy service</td><td>Ampere, TVS, Bajaj</td></tr>
+        <tr><td>Premium scooter coming soon</td><td>Ultraviolette Tesseract (2027)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="verdict">
+    <strong>Verdict:</strong> Ultraviolette is "best" if your priority is <strong>performance, range, speed and cutting-edge engineering</strong>, and you can absorb the higher price and smaller service footprint. For pure budget commuting and wide service access in a city like Kurnool, mainstream brands (Ather, TVS, Bajaj, Hero) remain more practical.
+  </div>
+
+  <h2>Sources</h2>
+  <ul class="src">
+    <li><a href="https://www.zigwheels.com/ultraviolette-bikes/f77/specifications/">Ultraviolette F77 specs — ZigWheels</a></li>
+    <li><a href="https://timesofindia.indiatimes.com/auto/electric-vehicles/ultraviolette-x-47-now-starts-at-rs-1-49-lakh-baas-pricing-details-explained/articleshow/129083333.cms">Ultraviolette X-47 pricing &amp; range — Times of India</a></li>
+    <li><a href="https://www.zigwheels.com/ultraviolette-bikes/tesseract/">Ultraviolette Tesseract — ZigWheels</a></li>
+    <li><a href="https://www.bajajgeneralinsurance.com/blog/motor-insurance-articles/top-electric-bikes-in-india.html">Best Electric Bikes 2026 (spec/price table) — Bajaj General Insurance</a></li>
+    <li><a href="https://www.bikewale.com/compare-bikes/bajaj-chetak-vs-tvs-iqube/">Bajaj Chetak vs TVS iQube — BikeWale</a></li>
+  </ul>
+  <p class="src">Content was rephrased for compliance with licensing restrictions.</p>
+</div>
+</body>
+</html>
