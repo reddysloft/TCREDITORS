@@ -63,8 +63,9 @@
     .bird-card .pill:last-child{margin-bottom:0}
 
     /* father/mother pedigree uploads + numbered cells */
-    .ref-stage{display:none;position:relative;container-type:inline-size;max-width:100%;margin:14px 0 2px;border:1px solid var(--line-2);border-radius:8px;overflow:hidden;line-height:0}
-    .ref-img-el{display:block;width:100%;height:auto}
+    .ref-stage{display:none;position:relative;container-type:inline-size;max-width:100%;margin:14px 0 2px;border:1px solid var(--line-2);border-radius:8px;overflow:hidden;line-height:0;cursor:crosshair;touch-action:none}
+    .ref-img-el{display:block;width:100%;height:auto;pointer-events:none;user-select:none;-webkit-user-drag:none}
+    .snip-rect{position:absolute;border:2px dashed var(--accent);background:rgba(201,162,75,.2);pointer-events:none;z-index:6;border-radius:2px}
     .ref-stage.text-mode .ref-img-el{opacity:.16}
     .text-layer{position:absolute;inset:0;line-height:1}
     .text-layer span{position:absolute;white-space:pre;color:#111;font-family:'Courier Prime','Courier New',monospace;line-height:1.05;background:rgba(255,255,255,.62);padding:0 1px;border-radius:2px;cursor:text;user-select:text;-webkit-user-select:text}
@@ -236,7 +237,7 @@
       <!-- Father's pedigree -->
       <section class="block">
         <div class="block-title">Father's pedigree</div>
-        <div class="block-sub">Upload the father's pedigree. Every box appears below as its own card — pick the box you want, select/copy its text (or fix it right in the card), and paste into a cell.</div>
+        <div class="block-sub">Upload the father's pedigree, then drag a box around any box on the picture. Its text is read and shown below to copy (and edit), then paste into a cell.</div>
         <label class="upload">Upload Father Pedigree (PNG / JPG)<input type="file" id="fatherUpload" accept="image/png,image/jpeg" /></label>
         <div class="ref-stage" id="fatherRefStage"></div>
         <div class="box-list" id="fatherBoxList"></div>
@@ -250,7 +251,7 @@
       <!-- Mother's pedigree -->
       <section class="block">
         <div class="block-title">Mother's pedigree</div>
-        <div class="block-sub">Upload the mother's pedigree. Every box appears below as its own card — pick the box you want, select/copy its text (or fix it right in the card), and paste into a cell.</div>
+        <div class="block-sub">Upload the mother's pedigree, then drag a box around any box on the picture. Its text is read and shown below to copy (and edit), then paste into a cell.</div>
         <label class="upload">Upload Mother Pedigree (PNG / JPG)<input type="file" id="motherUpload" accept="image/png,image/jpeg" /></label>
         <div class="ref-stage" id="motherRefStage"></div>
         <div class="box-list" id="motherBoxList"></div>
@@ -582,7 +583,8 @@
   // Show the uploaded picture as a reference, with draggable detected boxes overlaid.
   function renderRefImage(side){
     const stage=$(side+'RefStage');
-    stage.innerHTML='<img class="ref-img-el" alt="pedigree" />';
+    stage.classList.remove('text-mode');
+    stage.innerHTML='<img class="ref-img-el" alt="pedigree" draggable="false" />';
     stage.querySelector('img').src=ocr[side].url;
     stage.style.display='block';
   }
@@ -803,6 +805,85 @@
   }
 
   // ---------- UPLOAD WIRING ----------
+  // ----- SNIP TOOL: draw a box on the picture, OCR just that crop -----
+  let _worker=null;
+  async function getWorker(){
+    if(_worker) return _worker;
+    _worker=await Tesseract.createWorker('eng',1);
+    return _worker;
+  }
+  async function snipOCR(side,frac){
+    const img=new Image(); img.src=ocr[side].url;
+    await (img.decode?img.decode():new Promise(res=>{img.onload=res;}));
+    const NW=img.naturalWidth||img.width, NH=img.naturalHeight||img.height;
+    let sx=Math.max(0,frac.x*NW), sy=Math.max(0,frac.y*NH);
+    let sw=Math.min(frac.w*NW,NW-sx), sh=Math.min(frac.h*NH,NH-sy);
+    const scale = sw<500?3:(sw<1000?2:1.5);
+    const c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(sw*scale)); c.height=Math.max(1,Math.round(sh*scale));
+    const ctx=c.getContext('2d');
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+    ctx.drawImage(img,sx,sy,sw,sh,0,0,c.width,c.height);
+    const id=ctx.getImageData(0,0,c.width,c.height),d=id.data;
+    for(let i=0;i<d.length;i+=4){const l=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];const v=l<150?0:255;d[i]=d[i+1]=d[i+2]=v;}
+    ctx.putImageData(id,0,0);
+    const worker=await getWorker();
+    const {data}=await worker.recognize(c.toDataURL('image/png'));
+    return (data.text||'').replace(/[ \t]+\n/g,'\n').replace(/\n{2,}/g,'\n').trim();
+  }
+  function addSnipCard(side){
+    const list=$(side+'BoxList'); list.classList.add('show');
+    const n=list.querySelectorAll('.box-item').length+1;
+    const item=document.createElement('div'); item.className='box-item';
+    const head=document.createElement('div'); head.className='box-item-head';
+    const badge=document.createElement('span'); badge.className='box-item-badge'; badge.textContent='Selection '+n;
+    const btns=document.createElement('span');
+    const copy=document.createElement('button'); copy.type='button'; copy.className='copy-btn'; copy.textContent='Copy';
+    const del=document.createElement('button'); del.type='button'; del.className='copy-btn'; del.textContent='✕'; del.style.marginLeft='6px';
+    btns.appendChild(copy); btns.appendChild(del);
+    head.appendChild(badge); head.appendChild(btns);
+    const ta=document.createElement('textarea'); ta.className='box-item-text'; ta.spellcheck=false;
+    copy.addEventListener('click',ev=>copyText(ta.value,ev.currentTarget));
+    del.addEventListener('click',()=>item.remove());
+    item.appendChild(head); item.appendChild(ta);
+    list.appendChild(item);
+    item.scrollIntoView({block:'center',behavior:'smooth'});
+    return ta;
+  }
+  function wireSnip(side){
+    const stage=$(side+'RefStage');
+    let sel=null, rectEl=null;
+    stage.addEventListener('pointerdown',e=>{
+      if(!ocr[side].url) return;
+      const r=stage.getBoundingClientRect();
+      sel={r,x0:e.clientX-r.left,y0:e.clientY-r.top};
+      rectEl=document.createElement('div'); rectEl.className='snip-rect';
+      rectEl.style.left=sel.x0+'px'; rectEl.style.top=sel.y0+'px';
+      stage.appendChild(rectEl);
+      try{stage.setPointerCapture(e.pointerId);}catch(_){}
+      e.preventDefault();
+    });
+    stage.addEventListener('pointermove',e=>{
+      if(!sel||!rectEl) return;
+      const x=e.clientX-sel.r.left, y=e.clientY-sel.r.top;
+      const L=Math.min(sel.x0,x),T=Math.min(sel.y0,y),W=Math.abs(x-sel.x0),H=Math.abs(y-sel.y0);
+      rectEl.style.left=L+'px';rectEl.style.top=T+'px';rectEl.style.width=W+'px';rectEl.style.height=H+'px';
+    });
+    stage.addEventListener('pointerup',async e=>{
+      if(!sel) return;
+      const x=e.clientX-sel.r.left, y=e.clientY-sel.r.top;
+      const L=Math.min(sel.x0,x),T=Math.min(sel.y0,y),W=Math.abs(x-sel.x0),H=Math.abs(y-sel.y0);
+      const r=sel.r; sel=null;
+      if(rectEl){rectEl.remove();rectEl=null;}
+      if(W<10||H<8) return;
+      const frac={x:L/r.width,y:T/r.height,w:W/r.width,h:H/r.height};
+      const ta=addSnipCard(side); ta.value='Reading…';
+      const st=$(side+'Status'); if(st) st.textContent='Reading selection…';
+      try{ ta.value=await snipOCR(side,frac); if(st) st.textContent='Done. Copy it, then paste into a cell — or select another box.'; }
+      catch(err){ console.error(err); ta.value='(could not read this selection)'; if(st) st.textContent='Could not read that selection.'; }
+    });
+  }
+
   function wireUpload(side,inputId,cellsId,actionsId){
     $(inputId).addEventListener('change',e=>{
       const file=e.target.files&&e.target.files[0];if(!file)return;
@@ -812,16 +893,15 @@
         renderRefImage(side);
         $(cellsId).classList.add('show');
         $(actionsId).style.display='flex';
-        ocr[side].ready=false;
-        runOCR(side,ocr[side].url);
+        const list=$(side+'BoxList'); if(list){list.innerHTML='';list.classList.remove('show');}
+        const st=$(side+'Status'); if(st) st.textContent='Drag a box around any box on the picture to read its text.';
       };
       r.readAsDataURL(file);
     });
   }
   wireUpload('father','fatherUpload','fatherCells','fatherActions');
   wireUpload('mother','motherUpload','motherCells','motherActions');
-  $('fatherAdd').addEventListener('click',()=>runAdd('father',FATHER_CELLS));
-  $('motherAdd').addEventListener('click',()=>runAdd('mother',MOTHER_CELLS));
+  wireSnip('father'); wireSnip('mother');
 
   // Drag a detected box from the picture and drop it onto a tree cell.
   document.addEventListener('dragover',e=>{
