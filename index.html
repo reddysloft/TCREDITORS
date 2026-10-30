@@ -76,6 +76,13 @@
     .ref-box:active{cursor:grabbing}
     .ref-box-badge{position:absolute;top:0;left:0;background:var(--accent);color:#1a1a1a;font-size:.58rem;font-weight:700;padding:0 4px;border-radius:0 0 4px 0;line-height:1.5}
     .num-cell.drop-hover{outline:2px dashed var(--accent);outline-offset:1px;background:rgba(201,162,75,.10)}
+    /* box colour picker */
+    .color-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px}
+    .color-label{font-size:.64rem;color:var(--sub);letter-spacing:.06em;text-transform:uppercase;margin-right:2px}
+    .swatch{width:18px;height:18px;border-radius:50%;border:1px solid var(--line-2);cursor:pointer;padding:0}
+    .swatch.none{background:repeating-linear-gradient(45deg,#3a3a3a 0 3px,#1a1a1a 3px 6px)}
+    .swatch.active{box-shadow:0 0 0 2px var(--accent)}
+    .color-custom{width:26px;height:22px;border:1px solid var(--line-2);border-radius:5px;background:transparent;cursor:pointer;padding:0}
     /* detected-box list with copy buttons */
     .box-list{display:none;margin-top:12px;gap:8px;grid-template-columns:1fr 1fr}
     .box-list.show{display:grid}
@@ -412,8 +419,9 @@
   let current = null;                 // selected template file
   let logoData = null;                // uploaded logo data URL
   const saved = loadSaved();          // { templateFile: { key:{left,top,width,height} } }
-  const store = {};                   // key -> {ring,name,fancier,desc}
-  BIRDS.forEach(b=>store[b.key]={ring:'',name:'',fancier:'',desc:''});
+  const store = {};                   // key -> {ring,name,fancier,desc,color}
+  BIRDS.forEach(b=>store[b.key]={ring:'',name:'',fancier:'',desc:'',color:''});
+  const PALETTE=['','#ffffff','#7ce87c','#4fd0f0','#ffc21f','#ff9a5a','#ff9ec4'];
   const ocr = {
     father:{ready:false,chunks:[],boxes:[],lines:[],url:null,ocrW:0,ocrH:0},
     mother:{ready:false,chunks:[],boxes:[],lines:[],url:null,ocrW:0,ocrH:0}
@@ -464,7 +472,8 @@
        <input class="pill" data-bird="subject" data-f="name" placeholder="Bird Name" />
        <input class="pill" data-bird="subject" data-f="fancier" placeholder="Fancier Name" />
      </div>
-     <textarea class="pill" data-bird="subject" data-f="desc" placeholder="Details / content"></textarea>`;
+     <textarea class="pill" data-bird="subject" data-f="desc" placeholder="Details / content"></textarea>`
+     + colorControlHtml('subject');
 
   // Cells laid out as a pedigree tree: col1 = parent, col2 = grandparents, col3 = great-grandparents.
   const FATHER_TREE={
@@ -477,11 +486,19 @@
     col2:[['mf','Grand Father'],['mm','Grand Mother']],
     col3:[['mff','Great Grand Father'],['mfm','Great Grand Mother'],['mmf','Great Grand Father'],['mmm','Great Grand Mother']]
   };
+  function colorControlHtml(key){
+    const sw=PALETTE.map(c=>
+      `<button type="button" class="swatch${c===''?' none':''}" data-key="${key}" data-color="${c}" title="${c||'No colour'}"${c?(' style="background:'+c+'"'):''}></button>`
+    ).join('');
+    return `<div class="color-row" data-key="${key}"><span class="color-label">Box colour</span>${sw}`+
+      `<input type="color" class="color-custom" data-key="${key}" value="#ffffff" title="Custom colour" /></div>`;
+  }
   function cellHtml(key,label){
     return `<div class="num-cell">`+
       `<span class="num-cell-label">${esc(label)}</span>`+
       `<input class="pill ring-in" data-key="${key}" placeholder="Ring no. (then Add)" />`+
       `<textarea class="pill box-in" data-key="${key}" placeholder="Box content (edit after Add)"></textarea>`+
+      colorControlHtml(key)+
     `</div>`;
   }
   function buildTree(containerId,tree){
@@ -769,7 +786,8 @@
   function setBox(key,text){
     const ta=document.querySelector(`.box-in[data-key="${key}"]`);
     if(ta) ta.value=text;
-    store[key]=parseBox(text);
+    const color=(store[key]&&store[key].color)||'';
+    store[key]=parseBox(text); store[key].color=color;
   }
   function fillFromChunk(key,typed,chunk,others){
     const lines=chunk.split(/\n/).map(s=>s.trim()).filter(Boolean);
@@ -967,7 +985,9 @@
     // boxes
     BIRDS.forEach(b=>{
       const ov=$('ov-'+b.key);
-      ov.querySelector('.ov-text').innerHTML=boxHtml(getBird(b.key));
+      const d=getBird(b.key);
+      ov.querySelector('.ov-text').innerHTML=boxHtml(d);
+      ov.style.background = d.color || 'transparent';
     });
     // title
     const subjRing=getBird('subject').ring;
@@ -1010,8 +1030,23 @@
     store.subject[el.dataset.f]=el.value; renderAll();
   }));
   document.querySelectorAll('.box-in').forEach(ta=>ta.addEventListener('input',()=>{
-    store[ta.dataset.key]=parseBox(ta.value); renderAll();
+    const color=(store[ta.dataset.key]&&store[ta.dataset.key].color)||'';
+    store[ta.dataset.key]=parseBox(ta.value); store[ta.dataset.key].color=color; renderAll();
   }));
+  // box colour swatches + custom picker
+  function setBoxColor(key,color){
+    if(!store[key]) return;
+    store[key].color=color;
+    document.querySelectorAll('.swatch[data-key="'+key+'"]').forEach(s=>s.classList.toggle('active', s.dataset.color===color));
+    renderAll();
+  }
+  document.addEventListener('click',e=>{
+    const sw=e.target.closest&&e.target.closest('.swatch');
+    if(sw){ e.preventDefault(); setBoxColor(sw.dataset.key, sw.dataset.color); }
+  });
+  document.addEventListener('input',e=>{
+    if(e.target.classList&&e.target.classList.contains('color-custom')) setBoxColor(e.target.dataset.key, e.target.value);
+  });
   ['ftLoft','ftOwner','ftAddr','ftPhone','ftEmail'].forEach(id=>$(id).addEventListener('input',renderAll));
 
   // ---------- LOGO UPLOAD ----------
