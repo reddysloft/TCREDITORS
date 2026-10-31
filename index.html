@@ -76,13 +76,6 @@
     .ref-box:active{cursor:grabbing}
     .ref-box-badge{position:absolute;top:0;left:0;background:var(--accent);color:#1a1a1a;font-size:.58rem;font-weight:700;padding:0 4px;border-radius:0 0 4px 0;line-height:1.5}
     .num-cell.drop-hover{outline:2px dashed var(--accent);outline-offset:1px;background:rgba(201,162,75,.10)}
-    /* box colour picker */
-    .color-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px}
-    .color-label{font-size:.64rem;color:var(--sub);letter-spacing:.06em;text-transform:uppercase;margin-right:2px}
-    .swatch{width:18px;height:18px;border-radius:50%;border:1px solid var(--line-2);cursor:pointer;padding:0}
-    .swatch.none{background:repeating-linear-gradient(45deg,#3a3a3a 0 3px,#1a1a1a 3px 6px)}
-    .swatch.active{box-shadow:0 0 0 2px var(--accent)}
-    .color-custom{width:26px;height:22px;border:1px solid var(--line-2);border-radius:5px;background:transparent;cursor:pointer;padding:0}
     /* detected-box list with copy buttons */
     .box-list{display:none;margin-top:12px;gap:8px;grid-template-columns:1fr 1fr}
     .box-list.show{display:grid}
@@ -165,6 +158,17 @@
     .preview-head h3{font-size:1rem;color:var(--accent);font-family:'Inter',sans-serif;font-weight:600;letter-spacing:.04em}
     .align-ctrl{display:flex;align-items:center;gap:10px;font-size:.8rem;color:var(--sub);margin-bottom:10px;flex-wrap:wrap}
     .align-ctrl label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+    .color-ctrl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:.8rem;color:var(--sub)}
+    .color-ctrl label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+    .swatches{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .swatch{width:24px;height:24px;border-radius:5px;border:1px solid var(--line-2);cursor:pointer;padding:0}
+    .swatch:hover{outline:2px solid var(--accent);outline-offset:1px}
+    .swatch.none{background:repeating-linear-gradient(45deg,#2a2a2a 0 5px,#4a4a4a 5px 10px)}
+    .swatch.custom{width:30px;background:#8ce99a}
+    .ov-box{border-radius:4px}
+    .tpl-stage.color-mode .ov{pointer-events:auto;cursor:pointer}
+    .tpl-stage.color-mode .ov-box{outline:1px dashed rgba(77,210,245,.55);outline-offset:-1px}
+    .tpl-stage.color-mode .ov.color-selected{outline:2px solid #4dd2f5;outline-offset:-1px}
 
     /* STAGE */
     .tpl-stage{position:relative;container-type:inline-size;width:100%;border-radius:8px;overflow:hidden;background:#fff;border:1px solid var(--line-2);min-height:120px}
@@ -319,6 +323,10 @@
         <label><input type="checkbox" id="alignMode" /> Align mode (drag &amp; resize boxes)</label>
         <button class="btn-mini" id="resetPos" type="button">Reset positions</button>
       </div>
+      <div class="color-ctrl">
+        <label><input type="checkbox" id="colorMode" /> Colour mode (tap a box, then a colour)</label>
+        <div class="swatches" id="swatches"></div>
+      </div>
 
       <div class="tpl-stage" id="stage">
         <div class="stage-empty" id="stageEmpty">Select a template above to start building the pedigree.</div>
@@ -419,9 +427,10 @@
   let current = null;                 // selected template file
   let logoData = null;                // uploaded logo data URL
   const saved = loadSaved();          // { templateFile: { key:{left,top,width,height} } }
-  const store = {};                   // key -> {ring,name,fancier,desc,color}
-  BIRDS.forEach(b=>store[b.key]={ring:'',name:'',fancier:'',desc:'',color:''});
-  const PALETTE=['','#ffffff','#7ce87c','#4fd0f0','#ffc21f','#ff9a5a','#ff9ec4'];
+  const boxColors = loadColors();     // { templateFile: { key:'#hex' } }
+  let colorSelKey=null;               // box currently selected for colouring
+  const store = {};                   // key -> {ring,name,fancier,desc}
+  BIRDS.forEach(b=>store[b.key]={ring:'',name:'',fancier:'',desc:''});
   const ocr = {
     father:{ready:false,chunks:[],boxes:[],lines:[],url:null,ocrW:0,ocrH:0},
     mother:{ready:false,chunks:[],boxes:[],lines:[],url:null,ocrW:0,ocrH:0}
@@ -444,6 +453,8 @@
   function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
   function loadSaved(){try{return JSON.parse(localStorage.getItem('pedi_positions')||'{}');}catch(e){return {};}}
   function persist(){localStorage.setItem('pedi_positions',JSON.stringify(saved));}
+  function loadColors(){try{return JSON.parse(localStorage.getItem('pedi_colors')||'{}');}catch(e){return {};}}
+  function persistColors(){localStorage.setItem('pedi_colors',JSON.stringify(boxColors));}
 
   // ---------- CELL GROUPS (father / mother branches) ----------
   const FATHER_CELLS=[
@@ -472,8 +483,7 @@
        <input class="pill" data-bird="subject" data-f="name" placeholder="Bird Name" />
        <input class="pill" data-bird="subject" data-f="fancier" placeholder="Fancier Name" />
      </div>
-     <textarea class="pill" data-bird="subject" data-f="desc" placeholder="Details / content"></textarea>`
-     + colorControlHtml('subject');
+     <textarea class="pill" data-bird="subject" data-f="desc" placeholder="Details / content"></textarea>`;
 
   // Cells laid out as a pedigree tree: col1 = parent, col2 = grandparents, col3 = great-grandparents.
   const FATHER_TREE={
@@ -486,19 +496,11 @@
     col2:[['mf','Grand Father'],['mm','Grand Mother']],
     col3:[['mff','Great Grand Father'],['mfm','Great Grand Mother'],['mmf','Great Grand Father'],['mmm','Great Grand Mother']]
   };
-  function colorControlHtml(key){
-    const sw=PALETTE.map(c=>
-      `<button type="button" class="swatch${c===''?' none':''}" data-key="${key}" data-color="${c}" title="${c||'No colour'}"${c?(' style="background:'+c+'"'):''}></button>`
-    ).join('');
-    return `<div class="color-row" data-key="${key}"><span class="color-label">Box colour</span>${sw}`+
-      `<input type="color" class="color-custom" data-key="${key}" value="#ffffff" title="Custom colour" /></div>`;
-  }
   function cellHtml(key,label){
     return `<div class="num-cell">`+
       `<span class="num-cell-label">${esc(label)}</span>`+
       `<input class="pill ring-in" data-key="${key}" placeholder="Ring no. (then Add)" />`+
       `<textarea class="pill box-in" data-key="${key}" placeholder="Box content (edit after Add)"></textarea>`+
-      colorControlHtml(key)+
     `</div>`;
   }
   function buildTree(containerId,tree){
@@ -786,8 +788,7 @@
   function setBox(key,text){
     const ta=document.querySelector(`.box-in[data-key="${key}"]`);
     if(ta) ta.value=text;
-    const color=(store[key]&&store[key].color)||'';
-    store[key]=parseBox(text); store[key].color=color;
+    store[key]=parseBox(text);
   }
   function fillFromChunk(key,typed,chunk,others){
     const lines=chunk.split(/\n/).map(s=>s.trim()).filter(Boolean);
@@ -985,9 +986,7 @@
     // boxes
     BIRDS.forEach(b=>{
       const ov=$('ov-'+b.key);
-      const d=getBird(b.key);
-      ov.querySelector('.ov-text').innerHTML=boxHtml(d);
-      ov.style.background = d.color || 'transparent';
+      ov.querySelector('.ov-text').innerHTML=boxHtml(getBird(b.key));
     });
     // title
     const subjRing=getBird('subject').ring;
@@ -1011,6 +1010,12 @@
     if(!current) return;
     ['title','logo','footer'].forEach(k=>applyPos($('ov-'+k),getPos(k)));
     BIRDS.forEach(b=>applyPos($('ov-'+b.key),getPos(b.key)));
+    applyColors();
+  }
+  function applyColors(){
+    if(!current) return;
+    const cmap=boxColors[current]||{};
+    BIRDS.forEach(b=>{ const ov=$('ov-'+b.key); if(ov) ov.style.background=cmap[b.key]||''; });
   }
 
   // ---------- SELECT TEMPLATE ----------
@@ -1030,23 +1035,8 @@
     store.subject[el.dataset.f]=el.value; renderAll();
   }));
   document.querySelectorAll('.box-in').forEach(ta=>ta.addEventListener('input',()=>{
-    const color=(store[ta.dataset.key]&&store[ta.dataset.key].color)||'';
-    store[ta.dataset.key]=parseBox(ta.value); store[ta.dataset.key].color=color; renderAll();
+    store[ta.dataset.key]=parseBox(ta.value); renderAll();
   }));
-  // box colour swatches + custom picker
-  function setBoxColor(key,color){
-    if(!store[key]) return;
-    store[key].color=color;
-    document.querySelectorAll('.swatch[data-key="'+key+'"]').forEach(s=>s.classList.toggle('active', s.dataset.color===color));
-    renderAll();
-  }
-  document.addEventListener('click',e=>{
-    const sw=e.target.closest&&e.target.closest('.swatch');
-    if(sw){ e.preventDefault(); setBoxColor(sw.dataset.key, sw.dataset.color); }
-  });
-  document.addEventListener('input',e=>{
-    if(e.target.classList&&e.target.classList.contains('color-custom')) setBoxColor(e.target.dataset.key, e.target.value);
-  });
   ['ftLoft','ftOwner','ftAddr','ftPhone','ftEmail'].forEach(id=>$(id).addEventListener('input',renderAll));
 
   // ---------- LOGO UPLOAD ----------
@@ -1083,6 +1073,44 @@
     delete saved[current];persist();positionAll();showToast('Positions reset');
   });
 
+  // ---------- COLOUR MODE ----------
+  function applyColor(color){
+    if(!current){showToast('Pick a template first');return;}
+    if(!colorSelKey){showToast('Tap a box first, then a colour');return;}
+    boxColors[current]=boxColors[current]||{};
+    if(color==='none') delete boxColors[current][colorSelKey];
+    else boxColors[current][colorSelKey]=color;
+    persistColors(); applyColors();
+  }
+  (function(){
+    const PALETTE=['none','#8ce99a','#4dd2f5','#ffd43b','#ff8787','#ffa94d','#b197fc','#ffffff'];
+    const wrap=$('swatches');
+    PALETTE.forEach(col=>{
+      const b=document.createElement('button'); b.type='button';
+      b.className='swatch'+(col==='none'?' none':'');
+      if(col!=='none') b.style.background=col;
+      b.title=col==='none'?'No colour (clear)':col;
+      b.addEventListener('click',()=>applyColor(col));
+      wrap.appendChild(b);
+    });
+    const custom=document.createElement('input');
+    custom.type='color'; custom.className='swatch custom'; custom.value='#8ce99a'; custom.title='Custom colour';
+    custom.addEventListener('input',()=>applyColor(custom.value));
+    wrap.appendChild(custom);
+
+    $('colorMode').addEventListener('change',e=>{
+      stage.classList.toggle('color-mode',e.target.checked);
+      if(e.target.checked && $('alignMode').checked){ $('alignMode').checked=false; stage.classList.remove('align'); }
+    });
+    stage.addEventListener('click',e=>{
+      if(!stage.classList.contains('color-mode')||!current) return;
+      const ov=e.target.closest('.ov'); if(!ov) return;
+      stage.querySelectorAll('.ov.color-selected').forEach(x=>x.classList.remove('color-selected'));
+      ov.classList.add('color-selected');
+      colorSelKey=ov.id.replace('ov-','');
+    });
+  })();
+
   let drag=null;
   stage.addEventListener('pointerdown',e=>{
     if(!stage.classList.contains('align')||!current)return;
@@ -1110,9 +1138,11 @@
     const w=stage.offsetWidth||400;
     const scale=clamp(Math.round(1800/w),2,6);
     const wasAlign=stage.classList.contains('align');
-    stage.classList.remove('align');
+    const wasColor=stage.classList.contains('color-mode');
+    stage.classList.remove('align'); stage.classList.remove('color-mode');
     const canvas=await html2canvas(stage,{backgroundColor:'#fff',scale,useCORS:true,logging:false});
     if(wasAlign)stage.classList.add('align');
+    if(wasColor)stage.classList.add('color-mode');
     return canvas;
   }
   function fileBase(){
